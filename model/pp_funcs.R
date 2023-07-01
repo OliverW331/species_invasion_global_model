@@ -356,3 +356,4 @@ le <- function(par, echo = FALSE, time = TRUE){
   
   return(-P) #return neg, because optim minimizes (large negative P => low prob, so make it large positive)
 }
+

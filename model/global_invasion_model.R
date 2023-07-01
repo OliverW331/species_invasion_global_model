@@ -35,19 +35,19 @@ if (sw.processData){
   source("../Scripts/1a_newData.R")
 }else{
   ###import pre-processed data###
-  #A: 24,25,30
+  #A: 22,205,4
   soc_eco = readRDS("model_data/A-socioEcoDat-array.rds") 
   
-  #C: 25,6202
+  #C: 205,16082
   first_sight = readRDS("model_data/C-firstSightings-matrix.rds") 
   
-  #D: 25,25,7
+  #D: 205,205,1
   pairwise_data = readRDS("model_data/D-pairwiseData-array.rds")
   
   #B (outdated): 6026,4
-  species_traits = readRDS("model_data/B-speciesSighitngsTraits-taxa-df.rds")
+  # species_traits = readRDS("model_data/B-speciesSighitngsTraits-taxa-df.rds")
   
-  #Tr:25,25,24
+  #Tr:205,205,22
   trade = readRDS("model_data/Tr-baci1995to2018-array.rds") 
   
   ###Other Parameters###
@@ -63,8 +63,8 @@ if (sw.processData){
   tot_yrs = last_yr - first_yr + 1
   
   #Classify the species into Taxonomy
-  sp.taxa = lapply(unique(species_traits$taxa), FUN = function(x){which(species_traits$taxa == x)})
-  names(sp.taxa) = unique(species_traits$taxa)
+  # sp.taxa = lapply(unique(species_traits$taxa), FUN = function(x){which(species_traits$taxa == x)})
+  # names(sp.taxa) = unique(species_traits$taxa)
   
   #Construct a Time frame: 25,6202,24
   time_array = array(NA, dim=c(nc,ns,tot_yrs))
