@@ -26,8 +26,8 @@ sw.plotvars = TRUE
 sw.transform = TRUE # Log-transform
 # Which variables to log. If NA, don't log any
 sw.logvars = c(#NA 
-  "trade_export_sum",
-  "trade_import_sum",
+  # "trade_export_sum",
+  # "trade_import_sum",
   "gdp", 
   "population"
 )
@@ -36,13 +36,13 @@ sw.logvars = c(#NA
 
 ### Generating C ####
 ### FIRST INVASIONS MATRIX
-C.raw = readRDS("sp.rds")
+C.raw = readRDS("regional_sp.rds")
 
 C = C.raw
 
 # Remove first column ('Country')
-rownames(C) = C[,1]
-C <- C[, -c(1)]
+# rownames(C) = C[,1]
+# C <- C[, -c(1)]
 # Convert to matrix
 C <- as.matrix(C)
 
@@ -60,14 +60,14 @@ C = C - byr + 1
 
 
 #### TRADE DATA
-# Read in BACI, to get total import/export (annual)
-# (We already have 'Tr' so we don't need to do it again)
-Tr = readRDS("bi_tra.rds")
-#Tr = `Tr-baci1995to2018-array`
-# Aggregate Tr (assuming this is an array of array of i,j,year)
-# Is this Weight?
-Tr.exp = apply(Tr, c(1,3), sum, na.rm = TRUE)
-Tr.imp = apply(Tr, c(2,3), sum, na.rm = TRUE)
+# # Read in BACI, to get total import/export (annual)
+# # (We already have 'Tr' so we don't need to do it again)
+# Tr = readRDS("bi_tra.rds")
+# #Tr = `Tr-baci1995to2018-array`
+# # Aggregate Tr (assuming this is an array of array of i,j,year)
+# # Is this Weight?
+# Tr.exp = apply(Tr, c(1,3), sum, na.rm = TRUE)
+# Tr.imp = apply(Tr, c(2,3), sum, na.rm = TRUE)
 
 
 
@@ -82,28 +82,29 @@ A = list()
 #### GDP/Population data
 # Read in GDP and Population (WorldBank)
 # Note that I had to modify the original CSV file to remove the header
-gdp = readRDS("gdp.rds")
-pop = readRDS("pop.rds")
+gdp = readRDS("regional_gdp.rds")
+pop = readRDS("regional_pop.rds")
 
 
-# Combine Tr.exp and Tr.imp into a single array
-A.Tr = abind(Tr.exp, Tr.imp, along = 0)
-dimnames(A.Tr)[[1]] = c("trade_export_sum", "trade_import_sum")
-dimnames(A.Tr)[[3]] = as.character(1:22)
-A.Tr = aperm(A.Tr, c(3,2,1))
-# # Exclude the countries not in A
-# A.Tr = A.Tr[,dimnames(A.Tr)[[2]] %in% dimnames(A)[[2]],]
-
-# Add A.Tr to A
-A = A.Tr
+# # Combine Tr.exp and Tr.imp into a single array
+# A.Tr = abind(Tr.exp, Tr.imp, along = 0)
+# dimnames(A.Tr)[[1]] = c("trade_export_sum", "trade_import_sum")
+# dimnames(A.Tr)[[3]] = as.character(1:22)
+# A.Tr = aperm(A.Tr, c(3,2,1))
+# # # Exclude the countries not in A
+# # A.Tr = A.Tr[,dimnames(A.Tr)[[2]] %in% dimnames(A)[[2]],]
+# 
+# # Add A.Tr to A
+# A = A.Tr
 
 # Generate array of dimension (nyr, nc, var) using gdp, pop
-rownames(gdp) = gdp$Country.Code
-gdp = gdp[dimnames(A)[[2]],]
+rownames(gdp) = gdp$`socio-ecoregion`
+regions = rownames(gdp)
+gdp = gdp[regions,]
 gdp = as.matrix(gdp[,paste0("X",1995:2016)])
 
-rownames(pop) = pop$Country.Code
-pop = pop[dimnames(A)[[2]],]
+rownames(pop) = pop$`socio-ecoregion`
+pop = pop[regions,]
 pop = as.matrix(pop[,paste0("X",1995:2016)])
 
 A.wdi = abind(gdp, pop, along = 0)
@@ -112,12 +113,12 @@ dimnames(A.wdi)[[3]] = as.character(1:22)
 A.wdi = aperm(A.wdi, c(3,2,1))
 
 # Add to A
-A = abind(A, A.wdi, along = 3)
+A = A.wdi
 
 #### GENERATING D ####
 # Country pair data, most normalized
 # Non-temporal
-D.raw = readRDS("bi_dis.rds")
+D.raw = readRDS("biregional_dis.rds")
 # Columns of interest
 # What is `overlap`?
 D.raw.cols = c("phys_dist")
@@ -171,21 +172,26 @@ if(sw.transform){
     print(i)
     A[,,i] = scale(A[,,i])
   }
-  # Normalize D
+  
+  # Normalize D; Why is D not log?????? currently D only has distance
   for(i in 1:dim(D)[3]){
     print(i)
-    D[,,i] = scale(D[,,i])
+    if (dimnames(D)[[3]][i] == "phys_dist"){
+      D[,,i] = log(D[,,i])
+      D[,,i][D[,,i] == -Inf] <- NA
+    }
+    D[,,i] = scale(D[,,i],center = TRUE, scale = TRUE)
   }
 }
 
 # Modify Tr
-dimnames(Tr)[[3]] = as.character(1:22)
+# dimnames(Tr)[[3]] = as.character(1:22)
 
 # Write out (let's call this version 2)
-saveRDS(A, "../model/model_data/A-socioEcoDat-array.rds")
-saveRDS(C, "../model/model_data/C-firstSightings-matrix.rds")
-saveRDS(D, "../model/model_data/D-pairwiseData-array.rds")
-saveRDS(Tr, "../model/model_data/Tr-baci1995to2018-array.rds")
+saveRDS(A, "../model/model_data/regionalized_model_data/A-socioEcoDat-array.rds")
+saveRDS(C, "../model/model_data/regionalized_model_data/C-firstSightings-matrix.rds")
+saveRDS(D, "../model/model_data/regionalized_model_data/D-pairwiseData-array.rds")
+# saveRDS(Tr, "../model/model_data/Tr-baci1995to2018-array.rds")
 
 
 # Generate a table for variable switches
@@ -198,5 +204,5 @@ Var = data.frame(
   include = FALSE, # Switch to 'TRUE' when including in the model
   starting.value = 0
 )
-write.csv(Var, "../model/model_data/Var-variable_switches.csv", row.names = FALSE)
+write.csv(Var, "../model/model_data/regionalized_model_data/Var-variable_switches.csv", row.names = FALSE)
 

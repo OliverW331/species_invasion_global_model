@@ -1,3 +1,4 @@
+rm(list=ls());gc()
 setwd("D:/Environment Honor Thesis/global_model/raw_data")
 library(readxl) 
 library(tidyverse)
