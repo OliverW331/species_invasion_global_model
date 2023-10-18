@@ -1,7 +1,7 @@
 rm(list=ls());gc()
 graphics.off()
 
-setwd("D:/Environment Honor Thesis/global_model/model")
+
 library(abind) # For abind
 library(pROC)
 library(data.table)
@@ -9,23 +9,23 @@ library(data.table)
 ###Switches###
 sw.processData = FALSE
 sw.model = TRUE
-sw.maxit = 10
+sw.maxit = 20000
 sw.separateTaxa = FALSE
 sw.predict = TRUE
-sw.varswitch = "model_data/Var-variable_switches.csv"
+sw.varswitch = "model_data/regionalized_model_data/Var-variable_switches.csv"
 
 ###Starting parameter###
 #other starting parameters will be added through the variable switch
 pars.start = c(
   pp.y0 = 0,
-  alpha = 0.0150,
-  B = 0.000001
+  alpha = 0.0001,
+  B = 0.001
 )
 
 ###Output###
-timestamp <- format(Sys.time(), "%Y/%m/%d/%H:%M:%S")
-fdir <- tempfile(pattern = paste0("1-", timestamp, "-"), tmpdir = "../../output")
-
+timestamp <- format(Sys.time(), "%Y-%m-%d-%H:%M:%S")
+fdir <- tempfile(pattern = paste0("1-", timestamp, "-"), tmpdir = "output")
+#fdir <- 'output/1-2023-09-08-10:51:53-7ff075e031e6d'
 
 ###Functions###
 source("pp_funcs.R")
@@ -36,13 +36,13 @@ if (sw.processData){
 }else{
   ###import pre-processed data###
   #A: 22,205,4
-  soc_eco = readRDS("model_data/A-socioEcoDat-array.rds") 
+  soc_eco = readRDS("model_data/regionalized_model_data/A-socioEcoDat-array.rds") 
   
   #C: 205,16082
-  first_sight = readRDS("model_data/C-firstSightings-matrix.rds") 
+  first_sight = readRDS("model_data/regionalized_model_data/C-firstSightings-matrix.rds") 
   
   #D: 205,205,1
-  pairwise_data = readRDS("model_data/D-pairwiseData-array.rds")
+  pairwise_data = readRDS("model_data/regionalized_model_data/D-pairwiseData-array.rds")
   
   #B (outdated): 6026,4
   # species_traits = readRDS("model_data/B-speciesSighitngsTraits-taxa-df.rds")
@@ -155,7 +155,7 @@ if (sw.model){
       saveRDS(opt.out, gsub("\\.rds",paste0("-",tt,".rds"),fname))
     }
   }else{
-    opt.out = optim(par = pars.start, le, echo = TRUE)
+    opt.out = optim(par = pars.start, le, echo = TRUE, method = "SANN", control = list(maxit = sw.maxit))
     saveRDS(opt.out, fname)
   }
 }
@@ -197,13 +197,13 @@ if(sw.predict){
     temp.opt = opt[[i]]
     
     if(grepl("All", lf[i])){
-      C = C.tot
+      first_sight = first_sight.tot
       pps = pps.tot
-      TT = TT.tot
+      time_array = time_array.tot
     }else{
       tt = gsub("(.*[0-9]-)|(\\.rds)","",lf[i])
-      C = C.tot[,sp.taxa[[tt]]]
-      TT = TT.tot[,sp.taxa[[tt]],]
+      first_sight = first_sight.tot[,sp.taxa[[tt]]]
+      time_array = time_array.tot[,sp.taxa[[tt]],]
       pps = lapply(pps.tot, FUN = function(x){
         # It will always be the last one!
         if(length(dim(x)) == 4){
@@ -214,7 +214,7 @@ if(sw.predict){
         }
       })
     }
-    ns = dim(C)[2]
+    ns = dim(first_sight)[2]
     
     # Default is species-country (time = F), not species-country-time (time = T)
     pred = exp(predict.le(temp.opt$par, time = TRUE))
@@ -222,19 +222,19 @@ if(sw.predict){
     ## Generate observed values using C
     obs = array(data = NA, dim(pred))
     # country j, species k
-    for(j in 1:dim(C)[1]){
-      for(k in 1:dim(C)[2]){
-        if(!is.na(C[j,k])){ #this can't be is.na - if uninvaded, still important to know it remains a zero.
+    for(j in 1:dim(first_sight)[1]){
+      for(k in 1:dim(first_sight)[2]){
+        if(!is.na(first_sight[j,k])){ #this can't be is.na - if uninvaded, still important to know it remains a zero.
           #### FILL IN ####
-          obs[1:C[j,k],j,k] = 0 # If C[j,k] is 1, then it will be replaced by 1 below
-          obs[C[j,k],j,k] = 1
+          obs[1:first_sight[j,k],j,k] = 0 # If C[j,k] is 1, then it will be replaced by 1 below
+          obs[first_sight[j,k],j,k] = 1
         }
       }
     }
     
     ## Melt pred values onto observed values
-    obs2 = data.table::melt(obs)
-    pred2 = data.table::melt(pred)
+    obs2 = reshape2::melt(obs)
+    pred2 = reshape2::melt(pred)
     
     ## Note: pred accounts for first invasions so we don't have to for obs
     pvo = data.frame(year = pred2[,1], country = pred2[,2], species = pred2[,3], pred = pred2[,4], obs = obs2[,4])
@@ -252,9 +252,9 @@ if(sw.predict){
                             par = temp.opt$par)
   }
   
-  names(opt.results) = lf
-  saveRDS(opt.results, paste0(fdir, "results.rds"))
-  
+  names(opt.results) = 'result'
+  saveRDS(opt.results, paste0(fdir, "/results.rds"))
+  print(opt.results)
   if(0){
     test = glm(obs ~ year, pvo, family = "binomial")
     pvo$logit.pred = test$fitted.values
@@ -273,7 +273,7 @@ if(sw.predict){
       plot_data = pvo2,
       dev = (test$null.deviance-test$deviance)/test$null.deviance,
       auc = roc(pvo$obs ~ pvo$logit.pred)$auc
-    ),"../output/logit_results.rds")
+    ),"output/logit_results.rds")
   }
 }
 

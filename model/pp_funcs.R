@@ -127,6 +127,7 @@ mk_ppstruct = function(sw.vars, first_sight, soc_eco, pairwise_data, trade){
   #Question:
   #given that structure, how would one multiply by distance?
   #probably an each function?
+  
   pp = array(NA, dim = c(tot_yrs, nc, nc, ns))
   
   #we want to keep tract of each relevant variable in l
