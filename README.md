@@ -2,7 +2,7 @@
 
 ## Introduction
 
-This independent research project aims to understand and predict patterns of species invasions on a global scale. By integrating various ecological and socio-economic factors, the model assesses how different variables contribute to the biodiversity changes observed worldwide.
+This independent research project aims to understand and predict patterns of establishment of invasive species on a global scale. By integrating various ecological and socio-economic factors, the model assesses how different variables contribute to the species invasions observed worldwide.
 
 ## Prerequisites
 
