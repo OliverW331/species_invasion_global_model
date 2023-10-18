@@ -22,22 +22,20 @@ git clone https://github.com/OliverW331/species_invasion_global_model.git
 
 ## Usage
 
-This project contains several scripts that preprocess data, run the model, and perform post-processing. Here are some examples:
+This project contains several scripts that preprocess data and run the model. Here are some examples:
 
 ### Data Preprocessing
 
 - `baci_preprocess.R`: This script prepares the BACI trade data for analysis. It cleans and formats the data according to the model's requirements.
 - `bilateral_distance_preprocess.R`: Processes geographical distance data between countries, essential for the model's spatial aspects.
 - `gdp_pop_preprocess.R`: Prepares socio-economic data (GDP, population) for integration into the model.
-
+- `pp_funcs.R`: Contains various processing functions that precalculate the propagule pressure to save execution time
+- 
 ### Model Execution
 
 - `global_invasion_model.R`: The main script that runs the species invasion model. It takes the preprocessed data as input and generates predictions and insights regarding species invasions.
 - `global_invasion_model_grid_search.R`: Performs a grid search for parameter optimization in the species invasion model.
 
-### Post-processing
-
-- `pp_funcs.R`: Contains various post-processing functions that analyze and visualize the model's output data.
 
 To run the main model script, execute the following command in the project's root directory. Make sure the path names in the scripts are correct.:
 Rscript model/global_invasion_model.R
