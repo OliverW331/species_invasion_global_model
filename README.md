@@ -7,8 +7,8 @@ This project aims to understand and predict patterns of species invasions on a g
 ## Prerequisites
 
 Before you begin, ensure you have met the following requirements:
-- R software (version x.x.x or later)
-- Required R packages: [list here]
+- R software
+- Required R packages in the scripts
 - Data files formatted according to the specifications outlined in the preprocessing scripts
 
 ## Installation
