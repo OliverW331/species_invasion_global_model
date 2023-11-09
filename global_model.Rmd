@@ -1,0 +1,1110 @@
+---
+title: "global_species_invasion_model"
+author: "Oliver Wang"
+date: "`r Sys.Date()`"
+output: html_document
+---
+# Global Species Invasion Model
+## Introduction
+
+This document elaborates on a mathematical model designed to predict the probability of an invasive species `k` establishing in ecoregion `i` at time `t`. The model integrates factors like species traits, recipient environment characteristics, propagule pressure, and time to compute the likelihood of species establishment.
+
+## Formula Description
+
+The probability of species `k` invading ecoregion `i` at time `t` is given by the formula:
+
+\[ p_{i,k,t} = 1 - e^{(-\alpha(E_i, S_k)(N_{i,t})^\beta - \gamma t)} \]
+
+Where:
+
+- \( p_{i,k,t} \) is the probability of invasion,
+- \( \alpha(E_i, S_k) \) is a measure of species establishment based on the recipient environment \( E \) of ecoregion \( i \) and traits \( S \) of species \( k \),
+- \( N_{i,t} \) denotes the measure of propagule pressure at time \( t \) from other ecoregions to ecoregion \( i \),
+- \( \beta \) is an exponent parameter,
+- \( \gamma \) is a fitted parameter concerning the year as an integer,
+- \( t \) represents time. However, this expression of temporal element can be wrong. Another way to include it can look like this \[ p_{i,k,t} = 1 - e^{(-\alpha(E_i, S_k)(N_{i,t})^\beta(t)^\gamma)} \]  This has not been tested yet but in this case, we expect \( \gamma \) to be less than 0 since the establishment is decreasing although the propagule pressure is increasing.A negative \( \gamma \) could indicate that:
+  - The invasive species is not adapting well to the new environment, and its ability to establish is diminishing.
+  - The environment is becoming less suitable over time, perhaps due to changes in climate, habitat destruction, or increased resistance from native species.
+  - Effective management strategies are being implemented, reducing the invasive species' ability to establish.
+
+
+## Variables Explanation
+
+- \( \alpha(E_i, S_k) \): This term represents the species establishment measure. It encapsulates how the recipient environment of ecoregion \( i \) and the traits of species \( k \) influence the establishment of the invasive species. In this preliminary model, \( \alpha \) is included as a fitted parameter due to the absence of species or environment data. Since data for \( (E_i, S_k) \) is still unvailable right now, we fit \( \alpha \) to include the species information.
+
+- \( N_{i,t} \): This term denotes propagule pressure, which is the measure of the number of individuals of the invasive species arriving at ecoregion \( i \) at time \( t \). It's a critical factor as higher propagule pressure can significantly increase the likelihood of species establishment.
+
+- \( \beta \): This is an exponent parameter that adjusts the impact of propagule pressure on the establishment probability.
+
+- \( \gamma \): This fitted parameter adjusts the linear growth rate concerning the year as an integer, allowing the model to account for time-related changes in the establishment probability.
+
+- \( t \): Time, represented as an integer, is a crucial component as it allows for the assessment of how the probability of invasion changes over time.
+
+- Restriction: Values of \( \alpha \) and \( N_{i,t} \) must always be positive.
+
+## Propagule Pressure Approximation
+
+Propagule pressure is approximated using a gravity model, which is commonly applied in trade to estimate the flow of goods between countries. The gravity model is adapted to estimate the flow of invasive species, considering the economic and demographic characteristics of the source and destination regions, as well as the distance between them.
+
+The formula for propagule pressure using the gravity model is:
+
+\[ N_{i,t} = \frac{C \times GDP_{i,t}^m \times GDP_{j,t}^n \times POP_{i,t}^o \times POP_{j,t}^p}{D_{ij}^q} \]
+
+Where:
+
+- \( N_{i,t} \) is the propagule pressure from country \( j \) to ecoregion \( i \) at time \( t \),
+- \( GDP_{i,t} \) and \( GDP_{j,t} \) are the Gross Domestic Products of the destination and source countries, respectively,
+- \( POP_{i,t} \) and \( POP_{j,t} \) are the populations of the destination and source countries, respectively,
+- \( D_{ij} \) is the distance between the destination and source countries,
+- \( C \) is a constant of proportionality,
+- \( m, n, o, p, \) and \( q \) are parameters that determine the influence of each factor on the propagule pressure.
+
+This adaptation of the gravity model allows us to estimate the likelihood of invasive species being transported from one region to another based on economic activity, population size, and geographical distance.
+
+## Likelihood of Establishment
+
+The likelihood of an invasive species `k` establishing in a region `i` is determined by considering the first occurrence of the species as the point of establishment. For a region that becomes invaded in year `T`, the probability of establishment up to that year is calculated as the product of the annual probabilities:
+
+\[ P_{i,k} = p_{i,k,T} \times \prod_{t=1}^{T-1} (1 - p_{i,k,t}) \]
+
+Conversely, for a region that has not been invaded by year `T`, the probability that it remains uninvaded is given by the product of the complement of the annual probabilities:
+
+\[ P_{i,k} = \prod_{t=1}^{T} (1 - p_{i,k,t}) \]
+
+In these formulas:
+
+- \( P_{i,k} \) is the cumulative probability of species `k` establishing in region `i` by year `T`, or the probability of the region remaining uninvaded by year `T`.
+- \( p_{i,k,t} \) is the annual probability of invasion for species `k` in region `i` at year `t`, calculated using the previously described formula.
+
+To fit the model, we seek to maximize the log likelihood, which involves finding the parameter values that make the observed data most probable. Maximizing the log likelihood is a common method in statistical modeling as it can simplify the multiplication of probabilities into a sum of logarithms, making the calculations more manageable, especially for small probabilities.
+
+### Log-Likelihood of Establishment
+
+For a region that becomes invaded in year `T`, the log-likelihood of establishment up to that year is calculated as:
+
+\[ \log(P_{i,k}) = \log(p_{i,k,T}) + \sum_{t=1}^{T-1} \log(1 - p_{i,k,t}) \]
+
+Conversely, for a region that has not been invaded by year `T`, the log-likelihood that it remains uninvaded is given by:
+
+\[ \log(P_{i,k}) = \sum_{t=1}^{T} \log(1 - p_{i,k,t}) \]
+
+### Loss function
+We used optim to maximize the log-likelihood. Since optime only minimize a value, we sum all \( P_{i,k} \) and minimize the negative log-likelihood \( -\sum P_{i,k} \). 
+
+## Model Significance
+
+This model serves as a tool for understanding and forecasting the establishment probability of invasive species in different ecoregions over time. By analyzing the impact of various parameters and understanding how they interplay, it's possible to develop more effective management strategies to mitigate the risks associated with biological invasions.
+
+## Functions
+- File name: pp_funcs.R
+- Description: This script includes the functions used to pre-calculate the propagule pressure and calculate the log-likelihood. 
+
+### Functions used prepare the data structure of precalculating propagule pressure 
+In the in Dat's original script model_funcs.R, mk_ppstruct is hard coded. Here I reorganized the structure and split it into multiple functions that deal with different data. 
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Deviance explained, using mean observations as the null predictions
+#'@pred = vector predicted values
+#'@obs = vector observed values
+dev.expl = function(pred, obs, null = NA){
+  if(all(is.na(null))){
+    null = mean(obs)
+  }
+  ll = sum(log(1-abs(obs - pred)))
+  nl = sum(log(1-abs(obs - null)))
+  return((nl-ll)/nl)
+}
+
+### mk_ppstruct to generate propagule pressure ####
+#elements of PP remain constant, except for parameters. So we can percalcuate everything
+#for each variable determining PP, we want to keep track of the relevant elements of data structures so we can multiply them along with par later
+#one type of array is by yrs, src, dst, spscies
+## Now modified to only consider variables in sw.var$pp.vars
+
+#In the in Dat's original script model_funcs.R, mk_ppstruct is hard coded. Here I reorganized the structure and split it into multiple functions that deal with different data. 
+fill_pp_dim <- function(x, dim, reord, pp){
+  #get a template the right dimensions
+  pp1 = pp 
+  #copies the changing dimensions a number of times
+  #e.g.: yrs, dst, copies, src # times
+  tmp = array(as.vector(x), dim = dim)
+  #reorders dimensions to match pp (yrs, src, dst, species)
+  tmp = aperm(tmp, reord)
+  #fills in pp, and replicates tmp for any higher dimensions (e.g., species)
+  pp1[] = tmp 
+  return(pp1)
+}
+
+process_fst_sight <- function(ns, first_sight, pp){
+  for (s in 1:ns){
+    #x is the countries
+    x = first_sight[,s]
+    mn = min(x, na.rm = T)
+    
+    #iterate through each destination country
+    for (i in 1:length(x)){
+      #countries have to be in consistent order, get sources, and each yr contribute to dst i
+      #if not invaded, all invaded are sources
+      #src is the list of index of source countries
+      if (is.na(x[i])){
+        src = which(!is.na(x))
+        mx = tot_yrs
+      }else{
+        src = which(x<x[i])
+        mx = x[i]
+      }
+      
+      #don't include th first invasion in Europe
+      if (length(src)>0){
+        #determine which src/yr combinations can provide propagules
+        #for each year, need to sum across all source countries contribute to a given destination
+        #for each source, put 0 before inv, up to the date of invasion: generates a yr by src matrix
+        l1 <- lapply(x[src], function(x2){c(rep(NA, x2-mn), rep(1, mx-x2+1))})
+        #need to have the years, associated with location
+        pp[mn:mx, src, i, s] = unlist(l1)
+        
+      }else{
+        #this country/species has no sources (it is the first invasion in Europe)
+        pp[mn:mx, src, i, s] = NA
+      }
+    }
+  }
+  return(pp)
+}
+
+# Generate all variables in soc_eco, for src and dst
+process_soc_eco <- function(sw.vars, soc_eco, pps, pp){
+  soc_eco_var = dimnames(soc_eco)[[3]]
+  soc_eco_var = soc_eco_var[soc_eco_var %in% gsub("(\\.src)|(\\.dst)","",sw.vars$pp.vars)]
+  if (length(soc_eco_var) > 0){
+    for (var in soc_eco_var){
+      #src
+      pps[[paste0(var, ".src")]] = pp * as.vector(soc_eco[,,var])
+      #dst
+      pps[[paste0(var, ".dst")]] = fill_pp_dim(soc_eco[,,var], c(tot_yrs, nc, nc), c(1,3,2), pp)
+    }
+  }
+  return(pps)
+}
+
+#Generate all variables in pairwise_data such as distance, for src and dst
+process_pairwise <- function(sw.vars, pairwise_data, pps, pp){
+  pairwise_var = dimnames(pairwise_data)[[3]]
+  pairwise_var = pairwise_var[pairwise_var %in% sw.vars$pp.vars]
+  if(length(pairwise_var) > 0){
+    pps[pairwise_var] = lapply(pairwise_var, FUN = function(x){
+      return(fill_pp_dim(pairwise_data[,,x],c(nc,nc,tot_yrs),c(3,1,2), pp))
+    })
+  }
+  return(pps)
+}
+
+#Generate bilateral trade data
+process_trade <- function(sw.vars, trade, pps, pp){
+  if("bilateral_trade" %in% sw.vars$pp.vars){
+    pps[['bilateral_trade']]=fill_pp_dim(trade, c(nc,nc,tot_yrs), c(3,1,2), pp)
+  }
+  return(pps)
+}
+
+# Add an element that we can multiply by, that removes ones that shouldn't exist.
+add_remove <- function(pps, pp){
+  pps[['remove']]=apply(pp,c(1,3,4),function(x){
+    if(all(is.na(x)))
+      return(NA)
+    return(1)
+  })
+  return(pps)
+}
+```
+
+### Functions used to pre-calculate propagule pressure
+The mk_ppstruct function creates the pps that contains all the data required to calculate propogule pressure.
+
+```{r message=FALSE, warning=FALSE}
+mk_ppstruct = function(sw.vars, first_sight, soc_eco, pairwise_data, trade){
+  #mk_ppstruct:
+  # used in generation of pps
+  # destination/yr predictors. Need to keep order yrs, src, dst, sp, so need aperm
+  # the vector, the dimensions up to the one being filled, the reordered dimensions needed to match pp
+  
+  ### the basic parameters for dimension
+  nc = nrow(first_sight)
+  
+  #number of species
+  ns = ncol(first_sight)
+  
+  #number of years
+  last_yr = max(first_sight, na.rm=T)
+  first_yr = min(first_sight, na.rm=T)
+  tot_yrs = last_yr - first_yr + 1
+  
+  #Question:
+  #given that structure, how would one multiply by distance?
+  #probably an each function?
+  
+  pp = array(NA, dim = c(tot_yrs, nc, nc, ns))
+  
+  #we want to keep tract of each relevant variable in l
+  #we need to also keep track of how they add or multiply together
+  #the dimensions of the matrix in pps are all (yr, src, dst, sp)
+  
+  pps = list()
+  
+  #process the matrix of first sight, separating by species, and taking the years each country was invaded
+  #only consider the time periods that are not invaded yet
+  #for a country that is not invaded: 
+  # other countries not invaded throughout time = NA; 
+  # all invaded countries are sources starting from the time they are invaded = 1; other time period = NA;
+  #for a country that is invaded:
+  # other countries not invaded throughout time = NA;
+  # the countries that are invaded before it are sources from the time they are invaded to the time first sight showed up in this country = 1;
+  # other period = NA;
+  
+  pp = process_fst_sight(ns, first_sight, pp)
+  
+  # Generate all variables in the socio_eco data, for src and dst, and multiply it with pp;
+  # pps contains the result of multiplications with the names of corresponding variables;
+  # e.g.: "gdp.src", "population.dst";
+  # 
+  pps = process_soc_eco(sw.vars, soc_eco, pps, pp)
+  
+  # Generate all variables in the pairwise data
+  # e.g.: "phys_dist"
+  pps = process_pairwise(sw.vars, pairwise_data, pps, pp)
+  
+  # Generate all variables in the trade data
+  # e.g.: "bilateral_trade"
+  pps = process_trade(sw.vars, trade, pps, pp)
+  
+  #remove: shows whether there were invasions happened in this destination country in each year (1: Yes; NA: No)
+  pps = add_remove(pps, pp)
+  
+  gc()
+  
+  return(pps)
+}
+```
+
+The pp_func function calculate the propagule pressure. From the gravity equation of propagule pressure, we can derive that:
+
+\[ \log(N_{i,t}) = \log(C) + m \cdot \log(GDP_{i,t}) + n \cdot \log(GDP_{j,t}) + o \cdot \log(POP_{i,t}) + p \cdot \log(POP_{j,t}) - q \cdot \log(D_{ij}) \]
+
+Since GDP. population and distance are already log transformed, we calculate the sum and take the exponent to calculate \( N_{i,t} \). Sum across the propagule pressure from different source countries j to get the total propagule pressure to region i
+```{r message=FALSE, warning=FALSE}
+#Calculate propagule pressure for each species, location, and each year
+#go through each species
+#return a single value: summed propagule pressure for each year yr, summed across all sources
+pp_func <- function(start_par){
+  #iterate through each country, find previous invasions
+  #each element (species) has array of country by year
+  #   pps - from mk_ppstruct - dim:tot_yrs,nsrc,ndst,nspecies #is in this dimensionality 
+  # The propagule pressure to each destination needs to be aggregated across all sources, so the new dimensionality will be yr, dst country, and species, from a 4 dimensional array
+  # for a gravity formulation, values in pps would already be log transformed, so would get sum(X1^b1X2^b2): i.e., sum logs, take exponential
+  # This doesn't include the intercept though!
+  agg1 = lapply(sw.vars$pp.vars, FUN = function(vv){
+    return(start_par[vv]*pps[[vv]])
+  })
+  ## Agg1 is a list of arrays that we can sum using Reduce
+  # add up the values through the variables; the dimension of tmp is yr,nsrc,ndst,sp
+  tmp = Reduce('+', agg1)
+  # Also include intercept
+  tmp = tmp + start_par["pp.y0"]
+  
+  # NOTE: RETURNS NA IF ANY VALUE IS ALSO NA
+  # test=par["pp.y0"]+par["gdp.src"]*pps[["gdp.src"]]+par["gdp.dst"]*pps[["gdp.dst"]]+par["pop"]*pps[["pop"]]+par["dist"]*pps[["dist"]] #if this could be calculated for each src,dst pair, for each year, and then summed separately from all sources, this could be N.
+  # convert back to N
+  tmp=exp(tmp)
+  #sum across sources (i.e., by yr, dest, and species))
+  #NOTE: May also want a "c" coefficient - i.e., the shape parameter in a weibull. It would be applied to the entire sum in a given year
+  return(apply(tmp,c(1,3,4),sum,na.rm=T))
+  #we are asking the question what is the functional relationship between prop pressure and these macroecological variables. 
+}
+```
+
+### Functions to calculate the log-likelihood
+If we set \(U_{i,k,t} = -\alpha(E_i, S_k)(N_{i,t})^\beta - \gamma t\), then 
+\[ p_{i,k,t} = 1 - e^{U_{i,k,t}} \]
+We can derive that (assume the base of log to be \(e\))
+\[\log(p_{i,k,t}) = \log(1 - e^{U_{i,k,t}})\]
+\[\log(1-p_{i,k,t}) = \log(e^{U_{i,k,t}}) = {U_{i,k,t}}\]
+To calculate the log-likelihood, we derive that:
+
+- for places that are invaded at \(T\)
+\[ \log(P_{i,k}) = \log(p_{i,k,t}) + \sum_{t=1}^{T-1} \log(1 - p_{i,k,t}) \]
+\[ \log(P_{i,k}) = \log(1 - e^{U_{i,k,t}}) + \sum_{t=1}^{T-1} {U_{i,k,t}} \]
+- for places that are not invaded the whole time
+\[ \log(P_{i,k}) = \sum_{t=1}^{T} \log(1 - p_{i,k,t}) \]
+\[ \log(P_{i,k}) = \sum_{t=1}^{T} {U_{i,k,t}} \]
+
+If the temporal variable is not included in the variable switch file, the function is:
+```{r message=FALSE, warning=FALSE}
+#calculate the probability
+get_p <- function(x){
+  yoi = x[length(x)]
+  
+  # Remove the final column
+  x = x[-length(x)]
+  if(all(is.na(x))){ # If first invasion, don't included
+    return(NA)
+  }
+  
+  #it is uninvaded, return prob of remaining uninvaded the entire time
+  if(is.na(yoi)){
+    return(sum(x,na.rm=T))
+  }
+  #it has some non-NA values, so need to get rid of entry from C, held in the last position
+  #pi is probability of invaded and pu is probability of uninvaded
+  pi=log(1-exp(x[yoi]))
+  pu=sum(x[-yoi],na.rm=T)
+  
+  #return back prob i in yr invasion, and prob uninvaded up til then.
+  #need to figure out which ones were uninvaded
+  return(pi+pu)
+}
+```
+If the temporal variable is included, the function is:
+```{r message=FALSE, warning=FALSE}
+get_p_time = function(x){
+  yoi = x[length(x)]
+  
+  # Remove the final column
+  x = x[-length(x)]
+  if(all(is.na(x))){ # If first invasion, don't included
+    x[]=NA
+    return(x)
+  }
+  
+  # Never invaded, return pu (which is just probability of not invading the whole 60 years)
+  if(is.na(yoi)) return(x)
+  # If invaded, return pu from 1:(yoi-1) and pi at yoi, then NA for the rest
+  # Therefore, we maximize (log) probability of not establishing up to yoi,
+  # and the probability of establishing at yoi (because use multiply by -1)
+  x[yoi] = log(1-exp(x[yoi]))
+  
+  # If yoi is max year, then we don't have to do this
+  # This should already happen, but we'll do it again
+  if(yoi != length(x)) x[(yoi+1):length(x)] = NA
+  
+  return(x)
+}
+```
+These two functions are applied to a variable U of dimension (region, species, year+1). U[,,year+1] record the first sighting data.
+
+
+### Functions to return the log-likelihood matrix
+- This function will call pp_func() to calculate the propague pressure and then apply the formula to calculate the log-likelihood.
+- The dimension of the matrix returned is
+  - include time: (year, region, species)
+  - exclude time: (region, species)
+```{r message=FALSE, warning=FALSE}
+predict.le <- function(start_par, time = TRUE, echo = FALSE){
+  if(echo){
+    print(Sys.time())
+    print(start_par)
+  }
+  
+  #pp_func returns propagule pressure array of dim [year,country,species]
+  # Currently in order: tot_yrs, nc, ns
+  if(all(is.na(sw.vars$pp.vars))){
+    # If we have no propagule pressure variables, then we will exclude the pp_func step (since it is long)
+    # Instead we just add an array of all 1s
+    N = array(1, dim = dim(pps[["remove"]]))
+    start_par["B"] = 0
+  }else{
+    N = pp_func(start_par)
+  }
+  # 'remove' here will turn all time-steps after invasion to NA
+  # To deal with the invaded-at-t1 issue
+  # Test cases (country 1): species 1 = never invaded, species 2 = invaded at t1, species 220 = invaded at t10
+  # All 0s -> throws error
+  N=N*pps[["remove"]]
+  
+  N = aperm(N, c(2,3,1)) #needs to be in order nc, ns, tot_yrs (plus one, for year of first record), to multiply by coefficient a
+  
+  #Make C + tmp in the appropriate format for N? N is row countries, col years, array species. C and tmp are row country by species.
+  # If there are no variables provided, will instead fit using a fixed parameter (alpha)
+  if(all(is.na(sw.vars$sp.vars))){
+    a = start_par["alpha"] # single scalar value
+  }else{
+    a = as.vector(apply(B, 1, get_a, par=start_par)) #returns back a vector - order same as matrix nrow:country, ncol:species 
+  }
+  
+  if(echo){
+    print(paste("min(alpha) =", min(a)))
+    print(paste("min(N) =", min(N, na.rm = T)))
+  }
+  
+  # If EITHER a or PP are negative, then skip
+  if(min(a) < 0 | min(N, na.rm = T) < 0){
+    return(NULL)
+  }
+  
+  # U gives log(prob of remaining uninvaded), then need to sum over time (for each species location combo).
+  # Therefore, U must be negative
+  #we add a year to tot_yrs, cause we need to pass additional info about whether it is invaded or not
+  U=array(NA, dim=c(nc,ns,tot_yrs+1))
+  #### A LOT OF 0s WHICH WILL THROW AN ERROR IN GET_P, PRODUCTING INFINITES
+  if(start_par["B"] != 0){
+    U[,,-(tot_yrs+1)] =-a*(N)^start_par["B"]
+  }else{
+    U[,,-(tot_yrs+1)] =-a*aperm(pps[["remove"]], c(2,3,1))
+    
+  }
+  #if par["B"] == 0, even NAs in N will be treated as 1.
+  
+  # If we want time as a predictor
+  if("t" %in% sw.vars$time.vars){
+    # Add time as predictor to U
+    # We subtract because technically the whole thing needs to be negative (see working doc)
+    U[,,-(tot_yrs+1)] = U[,,-(tot_yrs+1)] - start_par["t"]*time_array
+  }
+  
+  if(max(U, na.rm = T) > 0) return(NULL)
+  
+  #vector with country (row) by species (column).
+  #for each U, need to extract the year of invasion, for each species and country. Info is in first_sight
+  U[,,(tot_yrs+1)] = first_sight #C is country by species
+  #U[,,-(tot_yrs+1)] = 1-exp(U[,,-(tot_yrs+1)])
+  # returns back a matrix of log probabilities, with row:countries, col:species
+  # return(apply(U,c(1,2),get_p))
+  # returns array of log probabilities, country, species and year
+  if(time){
+    return(apply(U,c(1,2), get_p_time))
+  }else{
+    return(apply(U,c(1,2), get_p))
+  }
+}
+```
+
+### Loss function: function that returns a value P for optim to minimize:
+
+```{r message=FALSE, warning=FALSE}
+le <- function(par, echo = FALSE, time = TRUE){
+  if(echo) cat("FITTING\n")
+  
+  if(all(is.na(sw.vars$pp.vars))){
+    par["B"] = 0
+  }
+  
+  # B cannot be negative!
+  if(par["B"] < 0){
+    return(10^24)
+  }
+  
+  # returns back a matrix of log probabilities, with row:countries, col:species
+  P = predict.le(par, time = time, echo = echo)
+  
+  # Basically remove if outside of contraints
+  if(all(is.null(P))){
+    return(10^24)
+  }
+  
+  #then we sum to get the joint likelihood
+  # NA are excluded variables, which replace 0 values in earlier versions
+  P = sum(P, na.rm = TRUE)
+  
+  if(echo){
+    print(paste("-P =", -P))
+    cat("DONE\n\n")
+  }
+  
+  return(-P) #return neg, because optim minimizes (large negative P => low prob, so make it large positive)
+}
+```
+
+## Model
+- File name: global_invation_model.R
+- Description: main body of the invasion model. Set hyperparameter and initial values to train the model.
+
+### Part 1: Data preparation
+This part of the model:
+
+- name the output file
+- set the hyperparameters and initial values
+- import all data and create the time array
+- prepare the data structure to pre-calculate the propagule pressure
+- to shorten the running time when testing, a sample of 1500 species is used 
+```{r message=FALSE, warning=FALSE}
+rm(list=ls());gc()
+graphics.off()
+
+setwd("D:/Environment Honor Thesis/global_model/model")
+library(abind) # For abind
+library(pROC)
+library(data.table)
+library(caret)
+
+###Switches###
+sw.processData = FALSE
+sw.model = FALSE
+sw.maxit = 200
+sw.separateTaxa = FALSE
+sw.predict = FALSE
+sw.varswitch = "model_data/regionalized_model_data/Var-variable_switches.csv"
+
+###Starting parameter###
+#other starting parameters will be added through the variable switch
+pars.start = c(
+  pp.y0 = 0,
+  alpha = 0.00005,
+  B = 0.1
+)
+
+###Output###
+timestamp <- format(Sys.time(), "%Y-%m-%d-%H-%M-%S")
+fdir <- tempfile(pattern = paste0("1-", timestamp, "-"), tmpdir = "output")
+#fdir <- "output/1-2023-10-31-01-37-11-bc406d648e"
+
+###Functions###
+source("pp_funcs.R")
+
+###Data pre-processing###
+if (sw.processData){
+  source("../Scripts/1a_newData.R")
+}else{
+  ###import pre-processed data###
+  #A: 22,15,2
+  soc_eco = readRDS("model_data/regionalized_model_data/A-socioEcoDat-array.rds") 
+  
+  #C: 15,16082
+  first_sight = readRDS("model_data/regionalized_model_data/C-firstSightings-matrix.rds") 
+  #When testing the model, I use a sample of 1500 species to shorten the running time of the model
+  set.seed(123) # for reproducibility
+  first_sight <- first_sight[, sample(1:ncol(first_sight), 1500)]
+  #D: 15,15,1
+  pairwise_data = readRDS("model_data/regionalized_model_data/D-pairwiseData-array.rds")
+  
+  #B (outdated):
+  # species_traits = readRDS("model_data/B-speciesSighitngsTraits-taxa-df.rds")
+  
+  #Tr:205,205,22 this is not used in this model; for now it only consider gdp, pop and dis
+  trade = readRDS("model_data/Tr-baci1995to2018-array.rds") 
+  
+  ###Other Parameters###
+  #number of countries
+  nc = nrow(first_sight)
+  
+  #number of species
+  ns = ncol(first_sight)
+  
+  #number of years
+  last_yr = max(first_sight, na.rm=T)
+  first_yr = min(first_sight, na.rm=T)
+  tot_yrs = last_yr - first_yr + 1
+  
+  #Classify the species into Taxonomy
+  # sp.taxa = lapply(unique(species_traits$taxa), FUN = function(x){which(species_traits$taxa == x)})
+  # names(sp.taxa) = unique(species_traits$taxa)
+  
+  #Construct a Time frame: 25,6202,24
+  time_array = array(NA, dim=c(nc,ns,tot_yrs))
+  for(i in 1:nc){
+    for(j in 1:ns){
+      # The last column is year, so make it 0
+      time_array[i,j,] = 1:tot_yrs
+    }
+  }
+  
+  #Generate variable needs to be included through varCSV (Variable switch)
+  varCSV = read.csv(sw.varswitch, stringsAsFactor = FALSE)
+  sw.vars = lapply(unique(varCSV$type), FUN = function(x){
+    temp.out = varCSV$variable[varCSV$type==x & varCSV$include == TRUE]
+    if(length(temp.out) > 0) return(temp.out)
+    return(NA)
+  })
+  names(sw.vars) = unique(varCSV$type)
+  
+  #Adding starting parameters from the varCSV(Variable Switch)
+  if(length(which(varCSV$include))){
+    pars.start = c(pars.start,
+                   varCSV$starting.value[varCSV$include]
+    )
+    names(pars.start)[4:length(pars.start)] = varCSV$variable[varCSV$include]
+  }
+  
+  #if we have species variables, then exclude alpha
+  if(!all(is.na(sw.vars$sp.vars))){
+    pars.start = pars.start[names(pars.start) %in% c(unlist(sw.vars), "pp.y0", "B")]
+  }
+  #Exclude B and pp.y0 since we don't need them if there are no PP variables
+  if(all(is.na(sw.vars$pp.vars))){
+    pars.start = pars.start[-which(names(pars.start) %in% c("pp.y0", "B"))]
+  }
+  
+}
+
+### Calculate the propagule pressure###
+t1 = Sys.time()
+pps = mk_ppstruct(sw.vars, first_sight, soc_eco, pairwise_data, trade)
+t2 = Sys.time()
+cat("Generating mk_ppstruct\n")
+print(t2-t1)
+```
+### Part 2: Model fitting
+Based on the hyperparameters and initial values, this part of the model will use optim to minimize the loss function and fit parameters to maximize the likelihood.
+```{r message=FALSE, warning=FALSE}
+### Model Fitting###
+if (sw.model){
+  # Create the directory if it does not exist
+  if (!dir.exists(fdir))dir.create(fdir)
+  
+  # Save metadata
+  saveRDS(sw.vars, paste0(fdir, "/variable_included.rds"))
+  saveRDS(pars.start, paste0(fdir, "/starting_params.rds"))
+  
+  #
+  fname = paste0(fdir, "/opt_fit-", ifelse(sw.separateTaxa, "byTaxa-", "All-"), Sys.time())
+  fname = gsub("\\s+.*", ".rds", fname)
+  cat("Output model:\n")
+  print(fname)
+  
+  pps = pps[names(pps) %in% c(na.omit(unlist(sw.vars)), "remove")]
+  gc()
+  
+  # Default method is Nelder-Mead
+  # Since we did not separate the taxa, only the else part will happen
+  if(sw.separateTaxa){
+    pps.tot = pps
+    first_sight.tot = first_sight
+    time_array.tot = time_array
+    
+    for(tt in names(sp.taxa)){
+      print(tt)
+      first_sight = first_sight.tot[,sp.taxa[[tt]]]
+      time_array = time_array.tot[,sp.taxa[[tt]],]
+      pps = lapply(pps.tot, FUN = function(x){
+        # It will always be the last one!
+        if(length(dim(x)) == 4){
+          return(x[,,,sp.taxa[[tt]]])
+        }else if(length(dim(x)) == 3){
+          return(x[,,sp.taxa[[tt]]])
+          stop("Incorrect dimensions")
+        }
+      })
+      ns = length(sp.taxa[[tt]])
+      
+      opt.out = optim(par = pars.start, le, echo = TRUE, control = list(maxit = sw.maxit))
+      # Save as we go, in case it crashes
+      saveRDS(opt.out, gsub("\\.rds",paste0("-",tt,".rds"),fname))
+    }
+  }else{
+    opt.out = optim(par = pars.start, le, echo = TRUE, control = list(maxit = sw.maxit))
+    saveRDS(opt.out, fname)
+  }
+}
+```
+
+### Part 3: Model prediction
+Using the fitted parameters, this part of the script calculates \({p_{i,k,t}}\) and compare it with the actual observation to examine how well the model performs.
+```{r message=FALSE, warning=FALSE}
+if(sw.predict){
+  first_sight.tot = first_sight
+  pps.tot = pps
+  time_array.tot = time_array
+  sw.vars.tot = sw.vars
+  
+  lf = list.files(fdir, pattern = "opt_fit.*rds", full.names = TRUE)
+  
+  opt = lapply(lf, readRDS)
+  names(opt) = lf
+  opt.results = list()
+  
+  # Subset sw.vars to the 1st model
+  sw.vars = lapply(sw.vars.tot, FUN = function(x){
+    if(all(is.na(x))) return(NA)
+    vv = x[x %in% names(opt[[1]]$par)]
+    if(length(vv)==0){
+      return(NA)
+    }else{
+      return(vv)
+    }
+  })
+  
+  pps = pps[names(pps) %in% c(na.omit(unlist(sw.vars)), "remove")]
+  gc() # Otherwise we can have some issues
+  
+  for(i in 1:length(opt)){
+    print(i)
+    print(lf[i])
+    temp.opt = opt[[i]]
+    
+    if(grepl("All", lf[i])){
+      first_sight = first_sight.tot
+      pps = pps.tot
+      time_array = time_array.tot
+    }else{
+      tt = gsub("(.*[0-9]-)|(\\.rds)","",lf[i])
+      first_sight = first_sight.tot[,sp.taxa[[tt]]]
+      time_array = time_array.tot[,sp.taxa[[tt]],]
+      pps = lapply(pps.tot, FUN = function(x){
+        # It will always be the last one!
+        if(length(dim(x)) == 4){
+          return(x[,,,sp.taxa[[tt]]])
+        }else if(length(dim(x)) == 3){
+          return(x[,,sp.taxa[[tt]]])
+          stop("Incorrect dimensions")
+        }
+      })
+    }
+    ns = dim(first_sight)[2]
+    
+    # Default is species-country (time = F), not species-country-time (time = T)
+    pred = 1-exp(predict.le(temp.opt$par, time = TRUE))
+    
+    ## Generate observed values using C
+    obs = array(data = NA, dim(pred))
+    # country j, species k
+    for(j in 1:dim(first_sight)[1]){
+      for(k in 1:dim(first_sight)[2]){
+        if(!is.na(first_sight[j,k])){ #this can't be is.na - if uninvaded, still important to know it remains a zero.
+          #### FILL IN ####
+          obs[1:first_sight[j,k],j,k] = 0 # If C[j,k] is 1, then it will be replaced by 1 below
+          obs[first_sight[j,k],j,k] = 1
+        }
+      }
+    }
+    
+    ## Melt pred values onto observed values
+    obs2 = reshape2::melt(obs)
+    pred2 = reshape2::melt(pred)
+    
+    ## Note: pred accounts for first invasions so we don't have to for obs
+    pvo = data.frame(year = pred2[,1], country = pred2[,2], species = pred2[,3], pred = pred2[,4], obs = obs2[,4])
+    pvo$obs[which(is.na(pvo$obs))] = 0 
+    pvo$pred = ifelse(pvo$obs==0, 1-pvo$pred, pvo$pred) # since the uninvaded are e^u and invaded are 1-e^u. To get the probability of invasion for period that are uninvaded, use 1 minus e^u. Same for regions that are uninvaded. 
+    pvo = na.omit(pvo)
+    
+    # Print alpha generated from mean(obs)
+    print(-log(1-mean(pvo$obs)))
+    
+    opt.results[[i]] = list(converged = ifelse(temp.opt$convergence==0, TRUE, FALSE),
+                            ll = temp.opt$value, 
+                            dev = dev.expl(pvo$pred, pvo$obs), 
+                            auc = as.numeric(roc(pvo$obs~pvo$pred)$auc),
+                            par = temp.opt$par)
+  }
+  
+  names(opt.results) = 'result'
+  saveRDS(opt.results, paste0(fdir, "/results.rds"))
+  
+  
+  if(1){
+    test = glm(obs ~ year, pvo, family = "binomial")
+    pvo$logit.pred = test$fitted.values
+    
+    (test$null.deviance-test$deviance)/test$null.deviance
+    roc(pvo$obs ~ pvo$logit.pred)$auc
+    
+    # Plot curves
+    pvo2 = pvo[!duplicated(pvo[,c("year", "obs")]),]
+    pvo2 = pvo2[order(pvo2$year),]
+    plot(obs~year, pvo2, pch = 20)
+    lines(logit.pred~year,pvo2, lwd = 2, col = "blue")
+    lines(pred~year,pvo2, lwd = 2, col = "red")
+    
+    saveRDS(list(
+      plot_data = pvo2,
+      dev = (test$null.deviance-test$deviance)/test$null.deviance,
+      auc = roc(pvo$obs ~ pvo$logit.pred)$auc
+    ),paste0(fdir, "/logistic_results.rds"))
+  }
+}
+```
+
+## Grid search on initial value
+Since initial values affect the performance of the model. I write a grid search script to test different combination of initial values. In this version, only different \(\alpha\) and \(\beta\) are considered. 
+- File name: global_invasion_model_grid_search.R
+- The model is written into a function. 
+- This way of testing different initial values is inefficient. There are probably better and smarter ways to search for them.
+```{r message=FALSE, warning=FALSE}
+rm(list=ls());gc()
+graphics.off()
+
+setwd("D:/Environment Honor Thesis/global_model/model")
+library(abind) # For abind
+library(pROC)
+library(data.table)
+library(caret)
+
+grid_search = FALSE
+
+###Functions###
+source("pp_funcs.R")
+sw.varswitch = "model_data/regionalized_model_data/Var-variable_switches.csv"
+###Data pre-processing###
+###import pre-processed data###
+#A: 22,15,2
+soc_eco = readRDS("model_data/regionalized_model_data/A-socioEcoDat-array.rds") 
+
+#C: 15,16082
+first_sight = readRDS("model_data/regionalized_model_data/C-firstSightings-matrix.rds") 
+set.seed(123) # for reproducibility
+first_sight <- first_sight[, sample(1:ncol(first_sight), 1500)]
+#D: 15,15,1
+pairwise_data = readRDS("model_data/regionalized_model_data/D-pairwiseData-array.rds")
+
+#B (outdated): 6026,4
+# species_traits = readRDS("model_data/B-speciesSighitngsTraits-taxa-df.rds")
+
+#Tr:205,205,22 this is not used in this model; for now it only consider gdp, pop and dis
+trade = readRDS("model_data/Tr-baci1995to2018-array.rds") 
+
+###Other Parameters###
+#number of countries
+nc = nrow(first_sight)
+
+#number of species
+ns = ncol(first_sight)
+
+#number of years
+last_yr = max(first_sight, na.rm=T)
+first_yr = min(first_sight, na.rm=T)
+tot_yrs = last_yr - first_yr + 1
+
+#Classify the species into Taxonomy
+# sp.taxa = lapply(unique(species_traits$taxa), FUN = function(x){which(species_traits$taxa == x)})
+# names(sp.taxa) = unique(species_traits$taxa)
+
+#Construct a Time frame: 
+time_array = array(NA, dim=c(nc,ns,tot_yrs))
+for(i in 1:nc){
+  for(j in 1:ns){
+    # The last column is year, so make it 0
+    time_array[i,j,] = 1:tot_yrs
+  }
+}
+
+#Generate variable needs to be included through varCSV (Variable switch)
+varCSV = read.csv(sw.varswitch, stringsAsFactor = FALSE)
+sw.vars = lapply(unique(varCSV$type), FUN = function(x){
+  temp.out = varCSV$variable[varCSV$type==x & varCSV$include == TRUE]
+  if(length(temp.out) > 0) return(temp.out)
+  return(NA)
+})
+names(sw.vars) = unique(varCSV$type)
+
+
+global_model = function(pars.start, sw.model = TRUE, sw.predict = TRUE, sw.maxit = 2000){
+  ###Switches###
+  sw.model = sw.model
+  sw.maxit = sw.maxit
+  sw.predict = sw.predict
+  sw.varswitch = sw.varswitch
+  
+  ###Starting parameter###
+  #other starting parameters will be added through the variable switch
+  pars.start = pars.start
+  
+  ###Output###
+  timestamp <- format(Sys.time(), "%Y-%m-%d-%H-%M-%S")
+  fdir <- tempfile(pattern = paste0("1-", timestamp, "-"), tmpdir = "output/grid_search/")
+  #fdir <- "output/1-2023-09-28-10-41-23-a1fc510160be"
+  
+
+  
+
+  
+  
+  ### Model Fitting###
+  if (sw.model){
+    # Create the directory if it does not exist
+    if (!dir.exists(fdir))dir.create(fdir)
+    
+    # Save metadata
+    saveRDS(sw.vars, paste0(fdir, "/variable_included.rds"))
+    saveRDS(pars.start, paste0(fdir, "/starting_params.rds"))
+    
+    #
+    fname = paste0(fdir, "/opt_fit-All-", Sys.time())
+    fname = gsub("\\s+.*", ".rds", fname)
+    cat("Output model:\n")
+    print(fname)
+    
+    pps = pps[names(pps) %in% c(na.omit(unlist(sw.vars)), "remove")]
+    gc()
+    
+    # Default method is Nelder-Mead
+    opt.out = optim(par = pars.start, le, echo = TRUE, control = list(maxit = sw.maxit))
+    saveRDS(opt.out, fname)
+  }
+  
+  
+  
+  
+  
+  #### MODEL PREDICTION ####
+  if(sw.predict){
+    first_sight.tot = first_sight
+    pps.tot = pps
+    time_array.tot = time_array
+    sw.vars.tot = sw.vars
+    
+    lf = list.files(fdir, pattern = "opt_fit.*rds", full.names = TRUE)
+    
+    opt = lapply(lf, readRDS)
+    names(opt) = lf
+    opt.results = list()
+    
+    # Subset sw.vars to the 1st model
+    sw.vars = lapply(sw.vars.tot, FUN = function(x){
+      if(all(is.na(x))) return(NA)
+      vv = x[x %in% names(opt[[1]]$par)]
+      if(length(vv)==0){
+        return(NA)
+      }else{
+        return(vv)
+      }
+    })
+    
+    pps = pps[names(pps) %in% c(na.omit(unlist(sw.vars)), "remove")]
+    gc() # Otherwise we can have some issues
+    
+    for(i in 1:length(opt)){
+      print(i)
+      print(lf[i])
+      temp.opt = opt[[i]]
+      
+      if(grepl("All", lf[i])){
+        first_sight = first_sight.tot
+        pps = pps.tot
+        time_array = time_array.tot
+      }else{
+        tt = gsub("(.*[0-9]-)|(\\.rds)","",lf[i])
+        first_sight = first_sight.tot[,sp.taxa[[tt]]]
+        time_array = time_array.tot[,sp.taxa[[tt]],]
+        pps = lapply(pps.tot, FUN = function(x){
+          # It will always be the last one!
+          if(length(dim(x)) == 4){
+            return(x[,,,sp.taxa[[tt]]])
+          }else if(length(dim(x)) == 3){
+            return(x[,,sp.taxa[[tt]]])
+            stop("Incorrect dimensions")
+          }
+        })
+      }
+      ns = dim(first_sight)[2]
+      
+      # Default is species-country (time = F), not species-country-time (time = T)
+      pred = exp(predict.le(temp.opt$par, time = TRUE))
+      
+      ## Generate observed values using C
+      obs = array(data = NA, dim(pred))
+      # country j, species k
+      for(j in 1:dim(first_sight)[1]){
+        for(k in 1:dim(first_sight)[2]){
+          if(!is.na(first_sight[j,k])){ #this can't be is.na - if uninvaded, still important to know it remains a zero.
+            #### FILL IN ####
+            obs[1:first_sight[j,k],j,k] = 0 # If C[j,k] is 1, then it will be replaced by 1 below
+            obs[first_sight[j,k],j,k] = 1
+          }
+        }
+      }
+      
+      ## Melt pred values onto observed values
+      obs2 = reshape2::melt(obs)
+      pred2 = reshape2::melt(pred)
+      
+      ## Note: pred accounts for first invasions so we don't have to for obs
+      pvo = data.frame(year = pred2[,1], country = pred2[,2], species = pred2[,3], pred = pred2[,4], obs = obs2[,4])
+      pvo$obs[which(is.na(pvo$obs))] = 0
+      pvo$pred = ifelse(pvo$obs==0, 1-pvo$pred, pvo$pred)
+      pvo = na.omit(pvo)
+      
+      # Print alpha generated from mean(obs)
+      print(-log(1-mean(pvo$obs)))
+      
+      opt.results[[i]] = list(converged = ifelse(temp.opt$convergence==0, TRUE, FALSE),
+                              ll = temp.opt$value, 
+                              dev = dev.expl(pvo$pred, pvo$obs), 
+                              auc = as.numeric(roc(pvo$obs~pvo$pred)$auc),
+                              par = temp.opt$par)
+    }
+    
+    names(opt.results) = 'result'
+    saveRDS(opt.results, paste0(fdir, "/results.rds"))
+    return(opt.results)
+  }
+  return(NA)
+}
+  
+
+alpha_range <- c(0.1, 0.01, 0.001, 0.0001, 0.00001)
+beta_range <- c(0.1, 0.01, 0.001, 0.0001, 0.00001)
+results <- data.frame(alpha=numeric(), beta=numeric(), auc = numeric(), dev = numeric(), ll = numeric(), convergence = logical())
+if (grid_search){
+  for (alpha_init in alpha_range) {
+    for (beta_init in beta_range) {
+      # Use these initial values in the optim function
+      print(paste0("alpha is ", alpha_init))
+      print(paste0("beta is ", beta_init))
+      pars.start = c(
+        pp.y0 = 0,
+        alpha = alpha_init,
+        B = beta_init
+      )
+      
+      #Adding starting parameters from the varCSV(Variable Switch)
+      if(length(which(varCSV$include))){
+        pars.start = c(pars.start,
+                       varCSV$starting.value[varCSV$include]
+        )
+        names(pars.start)[4:length(pars.start)] = varCSV$variable[varCSV$include]
+      }
+      
+      #if we have species variables, then exclude alpha
+      if(!all(is.na(sw.vars$sp.vars))){
+        pars.start = pars.start[names(pars.start) %in% c(unlist(sw.vars), "pp.y0", "B")]
+      }
+      #Exclude B and pp.y0 since we don't need them if there are no PP variables
+      if(all(is.na(sw.vars$pp.vars))){
+        pars.start = pars.start[-which(names(pars.start) %in% c("pp.y0", "B"))]
+      }
+      
+      
+      
+      ### Calculate the propagule pressure###
+      t1 = Sys.time()
+      pps = mk_ppstruct(sw.vars, first_sight, soc_eco, pairwise_data, trade)
+      t2 = Sys.time()
+      cat("Generating mk_ppstruct\n")
+      print(t2-t1)
+      model_res = global_model(pars.start,FALSE,FALSE,10)
+      auc = model_res$result$auc
+      dev = model_res$result$dev
+      ll = model_res$result$ll
+      convergence = model_res$result$converged
+      
+      # Store the results
+      results <- rbind(results, data.frame(alpha=alpha_init, beta=beta_init, auc = auc, dev = dev, ll = ll, convergence = convergence))
+    
+    }
+  }
+}
+```
+
+## Result
+```{r message=FALSE, warning=FALSE}
+setwd("D:/Environment Honor Thesis/global_model/model")
+result = readRDS("output/all_sp_0.75/results.rds")
+
+logit_result = readRDS("output/all_sp_0.75/logit_results.rds")
+pvo2 = logit_result$plot_data
+plot(obs~year, pvo2, pch = 20)
+lines(logit.pred~year,pvo2, lwd = 2, col = "blue")
+lines(pred~year,pvo2, lwd = 2, col = "red")
+
+# Create the base plot with the first line
+plot(logit.pred ~ year, data = pvo2, type = "l", lwd = 2, col = "blue", ylim = range(c(pvo2$logit.pred, pvo2$pred)), xlab = "Year", ylab = "Pobability")
+
+# Add the second line to the existing plot
+lines(pred ~ year, data = pvo2, lwd = 2, col = "red")
+print(paste0("The AUC of logistic model is ", logit_result$auc, " while the AUC of global invasion model is ", result$result$auc ))
+result
+test = glm(obs ~ year, pvo2, family = "binomial")
+summary(test)
+```
+
+
+
+

@@ -1,0 +1,1075 @@
+---
+title: "Global model data preprocessing"
+author: "Oliver Wang"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+## Data
+
+This model is an extension of the European invasion model which is developed by Dat and Brian. 
+22 years (1995-2016) of 205 countries' socio-economic data and 16082 invasive species are considered. The countries are then classifies into socio-ecoregions based on the method of Sardain et al. to avoid overloaded computation. The following data are preprocessed but bilateral trade data is not used yet since the method Sardain et al. applied did not mention ways to regionalize bilateral trade data.
+
+Data includes:
+
+- GDP
+  - Source: WorldBank World Development Indicators (WDI)
+  - 1960-2021
+  - URL: https://databank.worldbank.org/source/world-development-indicators
+- Population
+  - Source: WorldBank World Development Indicators (WDI)
+  - 1960-2021
+  - URL: https://databank.worldbank.org/source/world-development-indicators
+- Bilateral Distance
+  - Country Level:
+    - Source: CEPII Gravity Data
+    - Main city to main city distance
+    - Documentation: http://www.cepii.fr/DATA_DOWNLOAD/gravity/doc/Gravity_documentation.pdf
+    - URL: http://www.cepii.fr/CEPII/en/bdd_modele/bdd_modele_item.asp?id=8
+  - Socio-ecoRegion Level:
+    - Source: Longitude and Latitude data from maps package
+    - Calculate the mean longitude and latitude of all countries weighted by each country's population; great-circle distances on an ellipsoid between geographical point locations
+    - URL: https://cran.r-project.org/web/packages/geosphere/geosphere.pdf
+- Bilateral Trade
+  - Source: CEPII BACI Data
+  - 1995-2021
+  - Documentation: http://www.cepii.fr/DATA_DOWNLOAD/baci/doc/DescriptionBACI.html
+  - URL: http://www.cepii.fr/CEPII/en/bdd_modele/bdd_modele_item.asp?id=37
+- First Sighting record
+  - Source: Global Alien Species First Record Database
+  - Citation: https://www.nature.com/articles/ncomms14435
+  
+Other data to be considered:
+
+- Management and policy data
+- Species trait data
+- Shared border
+- common official language
+- common colonial history 
+- regional trade agreement
+- income per capita
+
+## Preprocessing steps and scripts
+### Data Preprocessing of Bilateral Trade
+
+- File name: cleaning_script/baci_preprocess.R
+- Description: reshape the format of BACI raw data so that it can be used by invasion_data.R; Since the raw data is too large, it is not shown here. 
+- Input: BACI raw data
+- Output: bilateral_trade.rds
+
+### Data Preprocessing of Bilateral Distance
+- File name: cleaning_script/bilateral_distance_preprocess.R
+- Description: reshape the format of Gravity raw data so that it can be used by invasion_data.R;
+- Input: Gravity raw data
+- Output: bilateral_distance.rds
+
+```{r message=FALSE, warning=FALSE}
+rm(list=ls());gc()
+setwd("D:/Environment Honor Thesis/global_model/raw_data")
+library(dplyr)
+library(tidyr)
+library(abind)
+# Read the RDS file containing bilateral distance data and store it in bi_dis
+bi_dis = readRDS("bilateral_distance/Gravity_V202211.rds")
+
+# Select only the 'year', 'iso3_o', 'iso3_d', and 'dist' columns from bi_dis
+bi_dis = select(bi_dis, year, iso3_o, iso3_d, dist)
+
+# Filter the data in bi_dis to include only the records for the year 2016
+bi_dis <- subset(bi_dis, year == 2016)
+
+# Get unique values of 'iso3_o', 'iso3_d', and 'year' columns from bi_dis
+iso3_o <- unique(bi_dis$iso3_o)
+iso3_d <- unique(bi_dis$iso3_d)
+years <- unique(bi_dis$year)
+
+# Initialize a 3D array called dist_matrix with dimensions based on the number of unique 'iso3_o' and 'iso3_d' values
+# Initially, fill the array with NA values
+dist_matrix <- array(NA, dim = c(length(iso3_o), length(iso3_d)),
+                     dimnames = list(iso3_o, iso3_d))
+
+# Append a new empty dimension to dist_matrix along the third axis
+dist_matrix <- abind(dist_matrix, along = 3)
+
+# Call garbage collection to free up memory (optional, for efficiency)
+gc()
+
+# Loop through each row of bi_dis
+for (i in 1:nrow(bi_dis)) {
+  
+  # Match the 'iso3_o', 'iso3_d', and 'year' values of the current row of bi_dis with the unique values obtained earlier
+  # This will give the indices where these values are found in the unique lists
+  iso_o_idx <- match(bi_dis$iso3_o[i], iso3_o)
+  iso_d_idx <- match(bi_dis$iso3_d[i], iso3_d)
+  year_idx <- match(bi_dis$year[i], years)
+  
+  # Get the 'dist' value of the current row of bi_dis
+  dist <- bi_dis$dist[i]
+  
+  # Use the obtained indices to update the corresponding entry in dist_matrix with the 'dist' value
+  dist_matrix[iso_o_idx, iso_d_idx, year_idx] <- dist
+}
+
+```
+The dimension of the dist_matrix is 243 243 1: 243 countries
+```{r message=FALSE, warning=FALSE}
+dim(dist_matrix)
+```
+### Data Preprocessing of GDP and Population
+- File name: cleaning_script/gdp_pop_preprocess.R
+- Description: reshape the format of WDI raw data so that it can be used by invasion_data.R;
+- Input: raw data of GDP and population from WDI
+- Output: gdp.rds and pop.rds
+
+```{r message=FALSE, warning=FALSE}
+rm(list=ls());gc()
+graphics.off()
+setwd("D:/Environment Honor Thesis/global_model/raw_data")
+
+library(abind) # For abind
+library(tidyr) # For spread()
+library(readr)
+# Read the CSV file containing country codes and store it in a data frame named country_codes_V202301
+country_codes_V202301 <- read_csv("BACI_trade/country_codes_V202301.csv")
+
+# Read the global population CSV file and store it in a data frame named pop, ensuring strings are not converted to factors
+pop = read.csv("popolation/global_population.csv", stringsAsFactor = FALSE)
+
+# Select only the columns representing country code and the years 1995 to 2016 from the pop data frame
+pop = pop[,c("Country.Code", paste0("X",1995:2016))]
+
+# Set the row names of the pop data frame to the values in the Country.Code column
+rownames(pop) = pop$Country.Code
+
+# Read the GDP CSV file and store it in a data frame named gdp, ensuring strings are not converted to factors
+gdp = read.csv("GDP/gdp.csv", stringsAsFactors = FALSE)
+
+# Select only the columns representing country code and the years 1995 to 2016 from the gdp data frame
+gdp = gdp[,c("Country.Code", paste0("X",1995:2016))]
+
+# Set the row names of the gdp data frame to the values in the Country.Code column
+rownames(gdp) = gdp$Country.Code
+
+# Filter the gdp data frame to include only rows where the Country.Code values match those in the country_codes_V202301 data frame
+filtered_gdp <- gdp[gdp$Country.Code %in% country_codes_V202301$iso_3digit_alpha, ]
+
+# Filter the pop data frame to include only rows where the Country.Code values match those in the country_codes_V202301 data frame
+filtered_pop <- pop[pop$Country.Code %in% country_codes_V202301$iso_3digit_alpha, ]
+
+```
+
+Both of the dimensions of these two list are 208,23: 208 countries and 23 years
+```{r message=FALSE, warning=FALSE}
+dim(filtered_gdp)
+dim(filtered_pop)
+```
+### Data Preprocessing of Global Alien Species First Record
+- File name: cleaning_script/species_preprocess.R
+- Description: reshape the raw data of Global Alien Species First Record so that it can be used by invasion_data.R;
+- In the country code reference list provided by BACI, some of the countries are missed. Therefore, they need to be added manually. Also, in the Global Alien Species First Record, some country names are not in the stardard form.
+- Input: Global Alien Species First Record (Hanno_database.xlsx)
+- Output: species_data.rds
+```{r message=FALSE, warning=FALSE}
+rm(list=ls());gc()
+setwd("D:/Environment Honor Thesis/global_model/raw_data")
+library(readxl) 
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(readr)
+country_codes_V202301 <- read_csv("D:/Environment Honor Thesis/global_model/raw_data/BACI_trade/country_codes_V202301.csv")
+country_codes <- data.frame(
+  Country = c("Aland Islands", "Amsterdam Island", "Andaman and Nicobar Islands", "Anticosti Island", "Ascension",
+              "Azores", "Balearic Islands", "Biak", "Bolivia", "Bonaire", "Bosnia and Herzegovina", "Canary Islands",
+              "Cape Verde", "Chagos Archipelago", "Channel Islands", "Christmas Island", "Clipperton Island",
+              "Cocos (Keeling) Islands", "Congo, Democratic Republic of the", "Corse", "Cote D'Ivoire", "Crete",
+              "Crozet Islands Group", "Curacao", "Czech Republic", "Falkland Islands", "Faroe Islands",
+              "Fernando De Noronha", "France", "French Guiana", "Galapagos", "Guadeloupe", "Hawaiian Islands",
+              "Hong Kong", "Izu Islands", "Kerguelen Islands", "Kermadec Islands", "Laos", "Liechtenstein",
+              "Lord Howe Island", "Macao", "Macedonia", "Madeira", "Martinique", "Micronesia, Federated States of",
+              "Moldova", "Monaco", "Norfolk Island", "North Korea", "Norway", "Ogasawara Islands",
+              "Palestinian Territory, Occupied", "Pitcairn Islands", "Puerto Rico", "Reunion", "Rodriguez Island",
+              "Russia", "Ryukyu Islands", "Saint Barthelemy", "Saint Martin", "Saint Paul (France)", "Sardinia",
+              "Scattered Islands", "Sea of Cortez Islands", "Shetland Islands", "Sicily", "Sint Maarten",
+              "Socotra Island", "South Georgia and the South Sandwich Islands", "South Korea", "Sulawesi",
+              "Svalbard and Jan Mayen", "Switzerland", "Taiwan", "Tanzania", "Tasmania", "Timor Leste",
+              "Tristan da Cunha", "Turks and Caicos", "United States of America", "US Minor Outlying Islands",
+              "Vancouver Island", "Vietnam", "Virgin Islands, US", "Wallis and Futuna", "Western Sahara",
+              "Zanzibar Island"),
+  ISO3 = c("ALA", "ATF", "AND", "CAN", "ASC", "AZE", "BAL", "IDN", "BOL", "BES", "BIH", "CAN", "CPV", "CHG", "CHI",
+           "CXR", "CLP", "CCK", "COD", "FRA", "CIV", "GRC", "TAF", "CUW", "CZE", "FLK", "FRO", "FEN", "FRA", "GUF",
+           "GAL", "GLP", "HAW", "HKG", "JPN", "KER", "KER", "LAO", "LIE", "LHI", "MAC", "MKD", "MDE", "MTQ", "FSM",
+           "MDA", "MCO", "NFK", "PRK", "NOR", "JPN", "PSE", "PCN", "PRI", "REU", "ROD", "RUS", "JPN", "BLM", "MAF",
+           "SPM", "ITA", "SCA", "SEA", "SHE", "ITA", "SXM", "YEM", "SGS", "KOR", "IDN", "SJM", "CHE", "TWN", "TZA",
+           "AUS", "TLS", "SHN", "TCA", "USA", "UMI", "CAN", "VNM", "VIR", "WLF", "ESH", "TZA")
+)
+# Read the excel file from the specified path into a data frame called sp
+sp <- read_excel("species_data/Hanno_database.xlsx")
+
+# Pipe the sp data frame through a series of operations:
+# 1. Select the columns Region, Taxon, and FirstRecord.
+# 2. Modify the Region column to replace "USACanada" with "United States of America&Canada".
+# 3. Separate the Region column into multiple rows wherever there is an ampersand (&), creating additional rows for each separated value.
+sp <- sp %>%
+  select(Region, Taxon, FirstRecord) %>%
+  mutate(Region = ifelse(Region == "USACanada", "United States of America&Canada", Region)) %>%
+  separate_rows(Region, sep = "&")
+
+# Create a new column ISO3:
+# 1. If the value in Region matches a country name in country_codes$Country, replace it with the corresponding ISO3 code.
+# 2. If the value does not match, keep the original Region value.
+sp$ISO3 <- ifelse(sp$Region %in% country_codes$Country, country_codes$ISO3[match(sp$Region, country_codes$Country)], sp$Region)
+
+# Update the ISO3 column:
+# 1. If the value in ISO3 matches a country name in country_codes_V202301$country_name_full, replace it with the corresponding iso_3digit_alpha code.
+# 2. If the value does not match, keep the original ISO3 value.
+sp$ISO3 <- ifelse(sp$ISO3 %in% country_codes_V202301$country_name_full, country_codes_V202301$iso_3digit_alpha[match(sp$ISO3, country_codes_V202301$country_name_full)], sp$ISO3)
+
+# Create a new data frame n_sp:
+# 1. Group the sp data frame by ISO3 and Taxon.
+# 2. Summarize the data to get the maximum FirstRecord for each group.
+# 3. Spread the Taxon values into columns, with the corresponding maximum FirstRecord values as the cell values.
+n_sp <- sp %>%
+  group_by(ISO3, Taxon) %>%
+  summarize(FirstRecord = max(FirstRecord)) %>%
+  spread(Taxon, FirstRecord)
+
+# Convert n_sp to a data frame
+n_sp <- as.data.frame(n_sp)
+
+# Set the row names of n_sp to the values in the ISO3 column
+rownames(n_sp) <- n_sp$ISO3
+
+```
+The dimensioin of n_sp is 254, 16923: 254 countries and 16923 species
+```{r}
+dim(n_sp)
+```
+### Finalize number of countries
+- File name: cleaning_script/clean_country.R
+- Description: Find the countries that overlap across different variabls to minimize the loss of data and finalize which countries and species that are used to train the model.
+- Input directory: raw_data/formatted
+- Output directory: cleaned_data
+- Number of countries: 205
+
+```{r message=FALSE, warning=FALSE}
+rm(list=ls());gc()
+graphics.off()
+setwd("D:/Environment Honor Thesis/global_model/raw_data/formatted")
+gdp = readRDS("gdp.rds")
+pop = readRDS("pop.rds")
+bi_dis = readRDS("bilateral_distance.rds")
+bi_tra = readRDS("bilateral_trade.rds")
+sp = readRDS("species_data.rds")
+country = sp$ISO3
+country = country[(country %in% gdp$Country.Code)]
+country = country[(country %in% rownames(bi_dis))]
+country = country[(country %in% rownames(bi_tra))]
+
+sp = sp[country, ]
+gdp = gdp[country, ]
+pop = pop[country, ]
+bi_dis = bi_dis[country, country, ]
+bi_tra = bi_tra[country, country, ]
+length(country)
+```
+## Regionalize the globe based on the methodology of Sardain et al.
+### Map of Socio-ecoregions
+- File name: cleaning_script/maps_of_ecoregion.R
+- Description: Create a map of socio-ecoregions and a reference that show the countries that are included in each region
+- Input: cleaned_data/socio_ecoregions.rds
+- Output: 
+  - cleaned_data/ecoregions_with_names.rds
+  - cleaned_data/ecoregion_map.rds
+```{r message=FALSE, warning=FALSE, fig.width=8, fig.height=8}
+rm(list=ls());gc()
+# Install and load the required packages
+setwd("D:/Environment Honor Thesis/global_model")
+library(ggplot2)
+library(ggmap)
+library(maps)
+library(mapdata)
+library(countrycode)
+library(dplyr)
+# List of regions with ISO3 country codes
+socio_ecoregions = readRDS("D:/Environment Honor Thesis/global_model/cleaned_data/socio_ecoregions.rds")
+
+
+custom_match <- c(
+  'USA' = 'USA', 'GBR' = 'UK',
+  "AIA" = "Anguilla", "ATA" = "Antarctica", "ATF" = "French Southern and Antarctic Lands",
+  "ATG" = "Antigua", "ATG" = "Barbuda", "BIH" = "Bosnia and Herzegovina",
+  "BLM" = "Saint Barthelemy", "CIV" = "Ivory Coast",
+  "COD" = "Democratic Republic of the Congo", "COG" = "Republic of Congo",
+  "COK" = "Cook Islands", "CUW" = "Curacao", "CZE" = "Czech Republic",
+  "ESP" = "Spain", "FLK" = "Falkland Islands", "REU" = "Reunion",
+  "MYT" = "Mayotte", "GUF" = "French Guiana", "MTQ" = "Martinique",
+  "GLP" = "Guadeloupe", "FRO" = "Faroe Islands", "FSM" = "Micronesia",
+  "GGY" = "Guernsey", "HMD" = "Heard Island", "IMN" = "Isle of Man",
+  "CCK" = "Cocos Islands", "CXR" = "Christmas Island", "IOT" = "Chagos Archipelago",
+  "JEY" = "Jersey", "KAS" = "Siachen Glacier", "KNA" = "Nevis",
+  "KNA" = "Saint Kitts", "XKX" = "Kosovo", "LCA" = "Saint Lucia",
+  "LIE" = "Liechtenstein", "MAF" = "Saint Martin", "MCO" = "Monaco",
+  "MMR" = "Myanmar", "MSR" = "Montserrat", "NFK" = "Norfolk Island",
+  "NIU" = "Niue", "BES" = "Bonaire", "BES" = "Sint Eustatius",
+  "BES" = "Saba", "PCN" = "Pitcairn Islands", "PNG" = "Papua New Guinea",
+  "PRI" = "Puerto Rico", "PRT" = "Portugal",
+  "PSE" = "Palestine", "ESH" = "Western Sahara", "SSD" = "South Sudan",
+  "SGS" = "South Sandwich Islands", "SGS" = "South Georgia", "SHN" = "Saint Helena",
+  "ASC" = "Ascension Island", "SPM" = "Saint Pierre and Miquelon",
+  "STP" = "Sao Tome and Principe", "SWZ" = "Swaziland",
+  "TCA" = "Turks and Caicos Islands", "TTO" = "Trinidad", "TTO" = "Tobago",
+  "TWN" = "China", "VAT" = "Vatican", "VCT" = "Grenadines",
+  "VCT" = "Saint Vincent", "VGB" = "Virgin Islands", "WLF" = "Wallis and Futuna"
+)
+# Function to convert ISO3 codes to country names
+iso3_to_country <- function(iso3_codes) {
+  country_names <- countrycode(iso3_codes, origin = "iso3c", destination = "country.name", custom_match = custom_match)
+  return(country_names)
+}
+
+# Convert ISO3 codes to country names for each region
+regions_with_names <- lapply(socio_ecoregions, iso3_to_country)
+
+world_map <- map_data("world")
+region_map <- map_data("world")
+
+# Function to replace region with corresponding label
+replace_with_label <- function(region) {
+  for (reg_label in names(regions_with_names)) {
+    if (region %in% regions_with_names[[reg_label]]) {
+      return(reg_label)
+    }
+  }
+  return(NA)
+}
+
+region_map$region <- sapply(region_map$region, replace_with_label)
+
+eco_map = 
+  ggplot(data = region_map) + 
+  geom_polygon(aes(x = long, y = lat, fill = region, group = group), color = "white") + 
+  coord_fixed(1.3) +  # Removed guides(fill=FALSE)
+  theme(legend.text = element_text(size = 6),  # Adjust text size
+        legend.title = element_text(size = 7))  # Adjust title size
+
+eco_map
+```
+
+
+
+
+### Regionalize GDP and populatioin
+- File name: cleaning_script/regionalize_gdp_pop.R
+- Description: This script classify all the 205 countries in to 15 socio-ecoregions based on the ISO3 code. GDP and population are the sum of the gdp and population of countries in that region.
+- The classification is based on some modification to Sardain et al's method. The paper can be found here: https://www.nature.com/articles/s41893-019-0245-y; Check the supplement of this paper to see the categories. 
+- Input:
+  - cleaned_data/gdp.rds
+  - cleaned_data/pop.rds
+- Output:
+  - cleaned_data/regional_gdp.rds
+  - cleaned_data/regional_pop.rds
+  - cleaned_data/socio_ecoregions.rds
+
+
+```{r}
+rm(list=ls());gc()
+
+gdp = readRDS("D:/Environment Honor Thesis/global_model/cleaned_data/gdp.rds")
+pop = readRDS("D:/Environment Honor Thesis/global_model/cleaned_data/pop.rds")
+
+#classify countries into socio-ecoregions: Based on Sardain's paper
+# Define the socio-ecoregions and associated countries
+#Only need to change socio_ecoregions if the classification needs modification
+socio_ecoregions <- list(
+  "North America" = c("CAN", "USA", "GRL"),
+  "Central America, Caribbean, & Northern South America" = c("VGB", "TCA", "SXM", "PAN", "KNA", "GRD", "DMA", "CYM", "CUW", "BMU", "ABW", "ATG", "BHS", "BRB", "BLZ", "BRA", "COL", "CRI", "CUB", "DOM", "SLV", "GTM", "GUY", "HTI", "HND", "JAM", "MEX", "NIC", "LCA", "VCT", "SUR", "TTO", "VEN"),
+  "Southern South America" = c("PRY", "BOL", "ARG", "CHL", "ECU", "PER", "URY"),
+  "Northern Europe" = c("SVK", "LUX", "IRL", "HUN", "CZE", "CHE", "BLR", "BEL", "DNK", "EST", "FIN", "FRA", "DEU", "ISL", "LVA", "LTU", "NLD", "NOR", "POL", "SWE", "GBR"),
+  "Mediterranean" = c("SRB", "SMR", "MKD", "GIB", "AUT", "ALB", "AND", "BIH", "DZA", "HRV", "CYP", "GRC", "ISR", "ITA", "LBN", "LBY", "MLT", "MNE", "MAR", "PRT", "SVN", "ESP", "SYR", "TUN", "TUR"),
+  "Western Africa" = c("TCD", "MLI", "COD", "CAF", "AGO", "BFA", "BEN", "CPV", "CMR", "CIV", "GNQ", "GAB", "GMB", "GHA", "GIN", "GNB", "LBR", "MRT", "NER", "NGA", "STP", "SEN", "SLE", "TGO"),
+  "Southern Africa" = c("ZWE", "ZMB", "SWZ", "NAM", "ZAF", "BWA", "LSO"),
+  "Eastern Africa" = c("SOM", "UGA", "SYC", "RWA", "MWI", "ETH", "BDI", "COM", "KEN", "MDG", "MUS", "MOZ", "TZA"),
+  "South Asia and Northern Africa" = c("NPL", "PSE", "EGY", "BTN","AZE", "AFG", "BHR", "BGD", "DJI", "ERI", "IND", "IRN", "IRQ", "JOR", "KWT", "MDV", "MMR", "OMN", "PAK", "QAT", "SAU",  "LKA", "SDN", "ARE", "YEM"),
+  "Southeast Asia" = c("GUM", "BRN","PNG", "LAO","KHM", "IDN", "MYS", "PHL", "SGP", "SLB", "THA", "TLS", "VNM"),
+  "Australia and New Zealand" = c("AUS", "NZL"),
+  "Northeast Asia" = c("MAC", "PRK", "MNG", "CHN", "HKG", "JPN", "KOR"),
+  "Eastern Indo-Pacific" = c("ASM", "FSM", "KIR", "MHL", "MNP", "NRU", "PLW", "TUV", "FJI", "PYF", "NCL", "WSM", "TON", "VUT"),
+  "Russia and Central Asia" = c("TKM", "RUS", "UZB", "TJK", "KAZ", "KGZ"),
+  "Black Sea Regions" = c("MDA", "BGR", "GEO", "ROU", "UKR", "ARM")
+)
+
+# Create a new dataframe to store regional GDP
+regional_gdp <- data.frame(socio_eco = character(), stringsAsFactors = FALSE)
+
+# Create a new dataframe to store regional population
+regional_pop <- data.frame(socio_eco = character(), stringsAsFactors = FALSE)
+
+# Loop through each socio-ecoregion
+for (region in names(socio_ecoregions)) {
+  countries <- socio_ecoregions[[region]]
+  
+  # Subset the gdp dataframe based on the countries in the current region
+  gdp_subset <- gdp[gdp$Country.Code %in% countries, ]
+  
+  # Calculate the sum of GDP for the current region (across all years)
+  gdp_sum <- colSums(gdp_subset[, -1], na.rm = TRUE)
+  
+  # Create a new row for the current region in the regional_gdp dataframe
+  row <- c(region, gdp_sum)
+  regional_gdp <- rbind(regional_gdp, row)
+  
+  # Subset the pop dataframe based on the countries in the current region
+  pop_subset <- pop[pop$Country.Code %in% countries, ]
+  
+  # Calculate the sum of population for the current region (across all years)
+  pop_sum <- colSums(pop_subset[, -1], na.rm = TRUE)
+  
+  # Create a new row for the current region in the regional_pop dataframe
+  row <- c(region, pop_sum)
+  regional_pop <- rbind(regional_pop, row)
+}
+
+# Rename the columns in regional_gdp and regional_pop based on years
+colnames(regional_gdp)[-1] <- colnames(gdp)[-1]
+colnames(regional_pop)[-1] <- colnames(pop)[-1]
+colnames(regional_gdp)[1] <- "socio-ecoregion"
+colnames(regional_pop)[1] <- "socio-ecoregion"
+regional_gdp[, -1] <- lapply(regional_gdp[, -1], as.numeric)
+regional_pop[, -1] <- lapply(regional_pop[, -1], as.numeric)
+```
+The socio-eco regions are
+```{r}
+names(socio_ecoregions)
+```
+### Regionalize Speceis First Sighting data
+- File names: cleaning_script/regionalize_sp_fst_ocur_v1.R
+- Description: The original species first sighting data is in the country scale. Here we classify the countries into socio-ecoregions and set the earliest occurrence of a species in all countries of this region to be the first sighting. 
+- Input:
+  - cleaned_data/sp.rds
+  - cleaned_data/socio_ecoregions.rds
+- Output:
+  - cleaned_data/regional_sp.rds
+
+```{r message=FALSE, warning=FALSE}
+rm(list=ls());gc()
+library(dplyr)
+sp = readRDS("D:/Environment Honor Thesis/global_model/cleaned_data/sp.rds")
+regions = readRDS("D:/Environment Honor Thesis/global_model/cleaned_data/socio_ecoregions.rds")
+
+find_smallest_first_occurrence <- function(species_first_occurrence, country_to_region) {
+
+
+  # Initialize an empty list to store results for each region
+  result_list <- list()
+
+  # Iterate through each region
+  for (region_name in names(country_to_region)) {
+    # Get the list of country names in the current region
+    countries_in_region <- country_to_region[[region_name]]
+
+    # Filter the species_first_occurrence dataframe to include only countries in the current region
+    region_data <- species_first_occurrence %>%
+      filter(ISO3 %in% countries_in_region)
+
+    # Find the smallest first occurrence year for each species in the current region
+    region_result <- region_data %>%
+      select(-ISO3) %>%  # Exclude the "Country" column
+      summarise(across(.cols = everything(), ~min(., na.rm = TRUE)))  # Calculate the minimum for all columns
+
+    region_result <- region_result %>%
+      mutate(across(.cols = everything(), ~replace(., is.infinite(.), NA)))
+
+    # Append the result for the current region to the result_list
+    result_list[[region_name]] <- region_result
+  }
+
+  # Combine all the results into a single dataframe
+  result_df <- do.call(rbind, result_list)
+
+  return(result_df)
+}
+
+
+# Call the function with the provided sample data
+regionalized_sp <- find_smallest_first_occurrence(sp, regions)
+```
+The dimension of regionalized_sp is 15, 16922: 15 socio-ecoregions, 16922 species
+```{r}
+dim(regionalized_sp)
+```
+### Calculate Distance between Socio-ecoregions
+- File name: cleaning_script/lon_lat_ecoregion.R
+- Description: Distance between two socio-ecoregions is calculated asgreat-circle distances on an ellipsoid between geographical point locations based on the mean latitude and longitude of all countries within the region, weighted by each country's population.
+- Input:
+  - cleaned_data/ecoregions_with_names.rds
+  - cleaned_data/socio_ecoregions.rds
+  - longitude and latitude data from maps package
+- Output:
+  - cleaned_data/biregional_dis.rds
+```{r message=FALSE, warning=FALSE}
+rm(list=ls());gc()
+graphics.off()
+setwd("D:/Environment Honor Thesis/global_model")
+
+library(ggplot2)
+library(maps)
+library(mapdata)
+library(countrycode)
+library(dplyr)
+library(geosphere)
+ecoregion_with_names = readRDS("cleaned_data/ecoregions_with_names.rds")
+socio_ecoregions = readRDS("cleaned_data/socio_ecoregions.rds")
+pop = readRDS("cleaned_data/pop.rds")
+
+#calculate the mean latitude and longitude for each ecoregion
+pop_df <- as.data.frame(pop)
+pop_df$Region <- NA
+
+# Loop through each region and assign region labels to countries
+for (region_label in names(socio_ecoregions)) {
+  countries <- socio_ecoregions[[region_label]]
+  pop_df$Region[pop_df$Country.Code %in% countries] <- region_label
+}
+
+
+custom_match <- c(
+  'USA' = 'USA', 'GBR' = 'UK',
+  "AIA" = "Anguilla", "ATA" = "Antarctica", "ATF" = "French Southern and Antarctic Lands",
+  "ATG" = "Antigua", "ATG" = "Barbuda", "BIH" = "Bosnia and Herzegovina",
+  "BLM" = "Saint Barthelemy", "CIV" = "Ivory Coast",
+  "COD" = "Democratic Republic of the Congo", "COG" = "Republic of Congo",
+  "COK" = "Cook Islands", "CUW" = "Curacao", "CZE" = "Czech Republic",
+  "ESP" = "Spain", "FLK" = "Falkland Islands", "REU" = "Reunion",
+  "MYT" = "Mayotte", "GUF" = "French Guiana", "MTQ" = "Martinique",
+  "GLP" = "Guadeloupe", "FRO" = "Faroe Islands", "FSM" = "Micronesia",
+  "GGY" = "Guernsey", "HMD" = "Heard Island", "IMN" = "Isle of Man",
+  "CCK" = "Cocos Islands", "CXR" = "Christmas Island", "IOT" = "Chagos Archipelago",
+  "JEY" = "Jersey", "KAS" = "Siachen Glacier", "KNA" = "Nevis",
+  "KNA" = "Saint Kitts", "XKX" = "Kosovo", "LCA" = "Saint Lucia",
+  "LIE" = "Liechtenstein", "MAF" = "Saint Martin", "MCO" = "Monaco",
+  "MMR" = "Myanmar", "MSR" = "Montserrat", "NFK" = "Norfolk Island",
+  "NIU" = "Niue", "BES" = "Bonaire", "BES" = "Sint Eustatius",
+  "BES" = "Saba", "PCN" = "Pitcairn Islands", "PNG" = "Papua New Guinea",
+  "PRI" = "Puerto Rico", "PRT" = "Portugal",
+  "PSE" = "Palestine", "ESH" = "Western Sahara", "SSD" = "South Sudan",
+  "SGS" = "South Sandwich Islands", "SGS" = "South Georgia", "SHN" = "Saint Helena",
+  "ASC" = "Ascension Island", "SPM" = "Saint Pierre and Miquelon",
+  "STP" = "Sao Tome and Principe", "SWZ" = "Swaziland",
+  "TCA" = "Turks and Caicos Islands", "TTO" = "Trinidad", "TTO" = "Tobago",
+  "TWN" = "China", "VAT" = "Vatican", "VCT" = "Grenadines",
+  "VCT" = "Saint Vincent", "VGB" = "Virgin Islands", "WLF" = "Wallis and Futuna"
+)
+# Function to convert ISO3 codes to country names
+iso3_to_country <- function(iso3_codes) {
+  country_names <- countrycode(iso3_codes, origin = "iso3c", destination = "country.name", custom_match = custom_match)
+  return(country_names)
+}
+
+# Step 1: Obtain latitude and longitude data for each country
+calculate_mean_lat_long <- function(pop_df, iso3_to_region, world_map) {
+  # Merge the population data with the world map data based on ISO3 code
+  merged_data <- merge(world_map, pop_df, by.x = "region", by.y = "Country.Code")
+  
+  # Calculate the weighted mean latitude and longitude for each region
+  weighted_mean_data <- merged_data %>%
+    group_by(region) %>%
+    summarize(mean_lat = sum(lat * X1995 / sum(X1995)),
+              mean_long = sum(long * X1995 / sum(X1995)))
+  
+  return(weighted_mean_data)
+}
+
+#reform world_map
+world_map <- map_data("world")
+
+mean_world_map <- world_map %>%
+  group_by(region) %>%
+  summarize(mean_lat = sum(lat * !is.na(long)) / sum(!is.na(long)),
+            mean_long = sum(long * !is.na(lat)) / sum(!is.na(lat)))
+
+
+
+# Step 2: Merge the 'pop_df' data frame with latitude and longitude data
+pop_df<- pop_df %>%
+  mutate(Country.Name = iso3_to_country(Country.Code))
+
+pop_df$Total_Population <- rowSums(pop_df[, -c(1, ncol(pop_df)-1, ncol(pop_df))])
+pop_df <- pop_df %>%
+  group_by(Region) %>%
+  mutate(Region_total_population = sum(Total_Population)) %>%
+  ungroup()
+pop_df <- pop_df %>%
+  mutate(Weight = Total_Population / Region_total_population)
+
+
+
+
+merged_data <- merge(pop_df, mean_world_map, by.x = "Country.Name", by.y = "region", all.x = TRUE)
+
+# Step 3: Calculate the weighted latitude and longitude for each region
+mean_lat_lon_by_region <- function(region_data) {
+  weighted_lat <- sum(region_data$mean_lat * region_data$Weight, na.rm = TRUE)
+  weighted_lon <- sum(region_data$mean_long * region_data$Weight, na.rm = TRUE)
+  return(data.frame(Weighted_Latitude = weighted_lat, Weighted_Longitude = weighted_lon))
+}
+
+# Create an empty data frame to store the mean latitude and longitude for each region
+mean_lat_lon_df <- data.frame(Region = character(), Weighted_Latitude = numeric(), Weighted_Longitude = numeric(), stringsAsFactors = FALSE)
+
+# Loop through each region, calculate the mean latitude and longitude, and store the results in 'mean_lat_lon_df'
+for (region_label in names(socio_ecoregions)) {
+  countries <- socio_ecoregions[[region_label]]
+  region_data <- merged_data[merged_data$Region == region_label, ]
+  
+  # Calculate the weighted latitude and longitude for the current region
+  region_mean_lat_lon <- mean_lat_lon_by_region(region_data)
+  
+  # Add the region label to the data frame
+  region_mean_lat_lon$Region <- region_label
+  
+  # Append the result to the 'mean_lat_lon_df' data frame
+  mean_lat_lon_df <- rbind(mean_lat_lon_df, region_mean_lat_lon)
+}
+
+###use mean_lat_lon_df to calculate the great circle distance
+calculate_distance <- function(region1, region2, data) {
+  lat_lon1 <- data[data$Region == region1, c("Weighted_Longitude", "Weighted_Latitude")]
+  lat_lon2 <- data[data$Region == region2, c("Weighted_Longitude", "Weighted_Latitude")]
+  return(distGeo(lat_lon1, lat_lon2))
+}
+
+regions <- unique(mean_lat_lon_df$Region)
+distance_matrix <- matrix(NA, nrow = length(regions), ncol = length(regions), dimnames = list(regions, regions))
+for (i in 1:length(regions)) {
+  for (j in 1:length(regions)) {
+    distance_matrix[i, j] <- calculate_distance(regions[i], regions[j], mean_lat_lon_df)
+  }
+}
+```
+The dimension of the distance matrix is 15, 15
+```{r}
+mat = distance_matrix
+# abbr_row_names <- abbreviate(rownames(mat))
+# abbr_col_names <- abbreviate(colnames(mat))
+# 
+# # Assign abbreviated names back to the matrix
+# rownames(mat) <- abbr_row_names
+# colnames(mat) <- abbr_col_names
+
+# Generate heatmap without reordering rows and columns
+heatmap(mat, Rowv = NA, Colv = NA, cexRow = 0.8, cexCol = 0.6)
+```
+
+### Coallate the regional data into format that can be accepted by the global_invasion_model.R
+
+- File name: cleaning_script/invasion_data.R
+- Description: This script (modified from Dat's script) prepare all the cleaned data into the correct form. Log transform the data (GDP, Population, Distance) used to calculate propagule pressure.
+- Input: 
+  - cleaned_data/regional_sp.rds
+  - cleaned_data/regional_gdp.rds
+  - cleaned_data/regional_pop.rds
+  - cleaned_data/biregional_dis.rds
+- Output:
+  - model/model_data/regionalized_model_data/A-socioEcoDat-array.rds
+  - model/model_data/regionalized_model_data/C-firstSightings-matrix.rds
+  - model/model_data/regionalized_model_data/D-pairwiseData-array.rds
+  - model/model_data/regionalized_model_data/Var-variable_switches.csv
+  
+```{r message=FALSE, warning=FALSE}
+rm(list=ls());gc()
+graphics.off()
+
+setwd("D:/Environment Honor Thesis/global_model/cleaned_data")
+
+#### LIBRARIES ####
+
+library(abind) # For abind
+library(tidyr) # For spread()
+
+
+#### SWITCHES ####
+
+# Plot histograms for all variables in A/C/D
+# In "../figs/3_newData/"
+sw.plotvars = TRUE
+
+sw.transform = TRUE # Log-transform
+# Which variables to log. If NA, don't log any
+sw.logvars = c(#NA 
+  # "trade_export_sum",
+  # "trade_import_sum",
+  "gdp", 
+  "population"
+)
+
+#### BODY ####
+
+### Generating C ####
+### FIRST INVASIONS MATRIX
+C.raw = readRDS("regional_sp.rds")
+
+C = C.raw
+
+# Remove first column ('Country')
+# rownames(C) = C[,1]
+# C <- C[, -c(1)]
+# Convert to matrix
+C <- as.matrix(C)
+
+C[which(C <= 1995)] <- 1995 # Set everything before 1995 as possible source.
+C[which(C > 2016)] <- NA # Dont have pred data past 2016 at the moment, so treat as 'not yet invaded'
+
+# See which species have not invaded Europe, and exclude
+not_pres=apply(C,2,function(x){all(is.na(x))})
+C=C[,-which(not_pres)]
+
+# Modify for 1995=1 to 2016=22
+byr = min(C, na.rm = TRUE)
+C = C - byr + 1
+
+
+
+#### TRADE DATA
+# # Read in BACI, to get total import/export (annual)
+# # (We already have 'Tr' so we don't need to do it again)
+# Tr = readRDS("bi_tra.rds")
+# #Tr = `Tr-baci1995to2018-array`
+# # Aggregate Tr (assuming this is an array of array of i,j,year)
+# # Is this Weight?
+# Tr.exp = apply(Tr, c(1,3), sum, na.rm = TRUE)
+# Tr.imp = apply(Tr, c(2,3), sum, na.rm = TRUE)
+
+
+
+### Generating A ####
+# A: country-year data
+# Array of dimensions: year, country, variable
+# Convert everything into years since b_yr (index)
+# I.e., 1995 => 1 to 2016 => 22
+
+### SOCIO-ECONOMIC DATA (non-temporal)
+A = list()
+#### GDP/Population data
+# Read in GDP and Population (WorldBank)
+# Note that I had to modify the original CSV file to remove the header
+gdp = readRDS("regional_gdp.rds")
+pop = readRDS("regional_pop.rds")
+
+
+# # Combine Tr.exp and Tr.imp into a single array, this section is commnetted out because trade data is not included
+# A.Tr = abind(Tr.exp, Tr.imp, along = 0)
+# dimnames(A.Tr)[[1]] = c("trade_export_sum", "trade_import_sum")
+# dimnames(A.Tr)[[3]] = as.character(1:22)
+# A.Tr = aperm(A.Tr, c(3,2,1))
+# # # Exclude the countries not in A
+# # A.Tr = A.Tr[,dimnames(A.Tr)[[2]] %in% dimnames(A)[[2]],]
+# 
+# # Add A.Tr to A
+# A = A.Tr
+
+# Generate array of dimension (nyr, nc, var) using gdp, pop
+rownames(gdp) = gdp$`socio-ecoregion`
+regions = rownames(gdp)
+gdp = gdp[regions,]
+gdp = as.matrix(gdp[,paste0("X",1995:2016)])
+
+rownames(pop) = pop$`socio-ecoregion`
+pop = pop[regions,]
+pop = as.matrix(pop[,paste0("X",1995:2016)])
+
+A.wdi = abind(gdp, pop, along = 0)
+dimnames(A.wdi)[[1]] = c("gdp", "population")
+dimnames(A.wdi)[[3]] = as.character(1:22)
+A.wdi = aperm(A.wdi, c(3,2,1))
+
+# Add to A
+A = A.wdi
+
+#### GENERATING D ####
+# Country pair data, most normalized
+# Non-temporal
+D.raw = readRDS("biregional_dis.rds")
+# Columns of interest
+# What is `overlap`?
+D.raw.cols = c("phys_dist")
+# abind for array
+D = abind(D.raw, along = 0)
+dimnames(D)[[1]] = D.raw.cols
+# 2 = i, 3 = j, 1 = var
+# Re-order to nc_i, nc_j, var
+D = aperm(D, c(2,3,1))
+
+
+# Plot histograms
+if(sw.plotvars){
+  # Plot A
+  fout = "../cleaned_data_figs/data_v1/"
+  temp.vars = dimnames(A)[[3]]  
+  for(dd in temp.vars){
+    png(paste0(fout,"A-",dd,".png"), 500, 500)
+    hist(A[,,dd], main = dd)
+    dev.off()
+  }
+  
+  # Plot D
+  temp.vars = dimnames(D)[[3]]
+  for(dd in temp.vars){
+    png(paste0(fout,"D-",dd,".png"), 500, 500)
+    hist(D[,,dd], main = dd)
+    dev.off()
+  }
+}
+
+## Transform the data now
+if(sw.transform){
+  # Log-transform gdp/trade/population
+  if(!all(is.na(sw.logvars))){
+    A[,,sw.logvars] = log(A[,,sw.logvars])
+  }
+  # Normalize A
+  for(i in 1:dim(A)[3]){
+    A[,,i] = scale(A[,,i])
+  }
+  
+  # log and Normalize D; currently D only has distance so we omit NA and normalize it. In Dat's script, this is not normalized.
+  for(i in 1:dim(D)[3]){
+    if (dimnames(D)[[3]][i] == "phys_dist"){
+      D[,,i] = log(D[,,i])
+      D[,,i][D[,,i] == -Inf] <- NA
+    }
+    D[,,i] = scale(D[,,i],center = TRUE, scale = TRUE)
+  }
+}
+
+# Modify Tr
+# dimnames(Tr)[[3]] = as.character(1:22)
+
+# Write out
+# saveRDS(A, "../model/model_data/regionalized_model_data/A-socioEcoDat-array.rds")
+# saveRDS(C, "../model/model_data/regionalized_model_data/C-firstSightings-matrix.rds")
+# saveRDS(D, "../model/model_data/regionalized_model_data/D-pairwiseData-array.rds")
+
+# Generate a table for variable switches
+pp.vars = c(paste0(dimnames(A)[[3]],".src"), paste0(dimnames(A)[[3]],".dst"), dimnames(D)[[3]], "bilateral_trade")
+Var = data.frame(
+  # No species variables yet
+  type = c(rep("pp.vars", length(pp.vars)), "sp.vars", "time.vars"),
+  source = c(rep("A", length(dimnames(A)[[3]])*2), rep("D", length(dimnames(D)[[3]])), "Tr", "B", NA),
+  variable = c(pp.vars, NA, "t"),
+  include = FALSE, # Switch to 'TRUE' when including in the model
+  starting.value = 0
+)
+
+#write.csv(Var, "../model/model_data/regionalized_model_data/Var-variable_switches.csv", row.names = FALSE)
+```
+### Graph of GDP/Population vs Time
+- File name: cleaning_script/gdp_pop_time_graph.R
+- Description: Based on the data collated, we examine the relationship between GDP/population and time. From the graphs, we can observe the GDP and population of most regions are increasing over time. The only exception is that the population in Black Sea region is decreasing. 
+- Input: model/model_data/regionalized_model_data/A-socioEcoDat-array.rds
+- Output directory: model/model_data/regionalized_model_data/gdp_pop_graph/
+
+```{r message=FALSE, warning=FALSE}
+library(ggplot2)
+library(tidyr)
+rm(list=ls());gc()
+graphics.off()
+setwd("D:/Environment Honor Thesis/global_model/model/model_data/regionalized_model_data")
+
+
+
+# Convert the matrix to an array
+array_data <- readRDS("A-socioEcoDat-array.rds")
+
+# Convert the array to a data frame
+df <- as.data.frame(as.table(array_data))
+
+
+df_long <- df %>%
+  gather(variable, value, -Var1, -Var2, -Var3)
+
+# ggplot(df_long, aes(x=Var1, y=value, color=Var3)) + 
+#   geom_line() + 
+#   facet_wrap(~Var2 + variable, scales="free_y") + 
+#   labs(title="Time Series Plot for Each Region", x="Time", y="Value") +
+#   theme_minimal()
+for(region in unique(df$Var2)){
+  subset_df <- df[df$Var2 == region,]
+  for (v in unique(df$Var3)){
+    # Plot GDP/Pop vs Time
+    subsub_df <- subset_df[subset_df$Var3 == v,]
+    
+    p = ggplot(subsub_df, aes(x=Var1, y=Freq)) +
+      geom_point() +
+      ggtitle(paste(v, " vs Time for", region)) +
+      xlab("Time") +
+      ylab(v) +
+      theme_bw()
+    #ggsave(paste0("gdp_pop_graph/", region, "_", v, ".png"))
+    print(p)
+  }
+}
+```
+### GLM results
+- File name: model/glm_sp_t.R
+- Description: This script fits general linear models on global and regional scales. It also generate graphs of species record vs time, species record vs gdp, species record vs population. 
+- Input: 
+  - model/model_data/regionalized_model_data/C-firstSightings-matrix.rds
+  - model/model_data/regionalized_model_data/A-socioEcoDat-array_unnormalized.rds
+  - model/model_data/regionalized_model_data/D-pairwiseData-array.rds
+- Output Directory:
+  - first_sight_graph
+  - data_graph
+  - data_graph/sp_by_gdp/
+  - data_graph/sp_by_pop/
+
+```{r message=FALSE, warning=FALSE}
+rm(list=ls());gc()
+graphics.off()
+setwd("D:/Environment Honor Thesis/global_model/model/model_data/regionalized_model_data")
+
+library(ggplot2)
+library(tidyr)
+library(stats)
+
+fs = readRDS("C-firstSightings-matrix.rds")
+gdp_pop = readRDS("A-socioEcoDat-array_unnormalized.rds")
+dis = readRDS("D-pairwiseData-array.rds")
+
+year_counts <- table(as.vector(fs))
+gdp = gdp_pop[,,1]
+pop = gdp_pop[,,2]
+gdp_cpt = rowSums(gdp_pop[,,1])/rowSums(gdp_pop[,,2])
+dis = dis[,,1]
+gdp_sum <- rowSums(gdp)
+pop_sum <- rowSums(pop)
+cumulative_counts <- cumsum(year_counts)
+df <- data.frame(year=as.numeric(names(cumulative_counts)), cumulative_count=as.numeric(cumulative_counts))
+p1 = ggplot(df, aes(x=year, y=cumulative_count)) +
+  geom_point() +
+  geom_line(group=1) +
+  labs(title="Cumulative Number of First Records by Year", x="Year", y="Cumulative Number of Records") +
+  theme_bw()
+print(p1)
+#ggsave(paste0("first_sight_graph/", "first_record_acc.png"))
+
+#Exclude the first year since it contains all the historical first sighting
+year_counts <- year_counts[-1]
+gdp_sum <- gdp_sum[-1]
+pop_sum <- pop_sum[-1]
+gdp_cpt <- gdp_cpt[-1]
+df <- data.frame(year=as.numeric(names(year_counts)), count=as.numeric(year_counts), gdp_sum, pop_sum, gdp_cpt)
+df$year_normalized <- scale(df$year)
+df$gdp_normalized <- scale(df$gdp_sum)
+df$pop_normalized <- scale(df$pop_sum)
+df$gdp_cpt_normalized <- scale(df$gdp_cpt)
+
+p2 = ggplot(df, aes(x=year, y=count)) +
+  geom_point() +
+  geom_line(group=1) +
+  labs(title="Number of First Record by Year", x="Year", y="Number of Records") +
+  theme_bw()
+#ggsave(paste0("first_sight_graph/", "first_record_year.png"))
+print(p2)
+p3 = ggplot(df, aes(x=gdp_sum, y=count)) +
+  geom_point() +
+  #geom_line(group=1) +
+  labs(title="Number of First Record vs GDP", x="GDP", y="Number of Records") +
+  theme_bw()
+#ggsave(paste0("first_sight_graph/", "first_record_gdp.png"))
+print(p3)
+p4 = ggplot(df, aes(x=pop_sum, y=count)) +
+  geom_point() +
+  #geom_line(group=1) +
+  labs(title="Number of First Record vs Population", x="Pop", y="Number of Records") +
+  theme_bw()
+#ggsave(paste0("first_sight_graph/", "first_record_pop.png"))
+print(p4)
+p5 = ggplot(df, aes(x=gdp_cpt, y=count)) +
+  geom_point() +
+  #geom_line(group=1) +
+  labs(title="Number of First Record vs GDP per capita", x="gdp per capita", y="Number of Records") +
+  theme_bw()
+#ggsave(paste0("first_sight_graph/", "first_record_gdp_per_capita.png"))
+print(p5)
+
+```
+```{r message=FALSE, warning=FALSE}
+# Since the response variable is the count of invasion each year, it's appropriate to use poisson distribution.
+model_t <- glm(count ~ year_normalized, data=df, family="poisson")
+summary(model_t)
+#saveRDS(model_s, "data_graph/global_glm_result_count_year.rds")
+model_s <- glm(count ~ year_normalized + gdp_normalized + pop_normalized, data=df, family="poisson")
+summary(model_s)
+#saveRDS(model_t, "data_graph/global_glm_result_count_all_sep.rds")
+model_all<- glm(count~ year_normalized * gdp_normalized * pop_normalized, data = df, family = "poisson")
+summary(model_all)
+#saveRDS(model_all, "data_graph/global_glm_result_count_all_int.rds")
+```
+
+The third model reveals significant interactions, indicating that the relationship between year_normalized and count is not straightforward and is influenced by the levels of gdp_normalized and pop_normalized.Significant interactions (such as year_normalized:gdp_normalized, gdp_normalized:pop_normalized, and year_normalized:gdp_normalized:pop_normalized) indicate complex relationships among the predictors and the count. For example, the effect of year on count changes with different levels of GDP and population. Also, the AIC is lower as the model becomes more complex, highlighting the complex interaction among variables.
+
+```{r}
+df$pred_t <- predict(model_s, type = "response")
+df$pred_s <- predict(model_t, type = "response")
+df$pred_all <- predict(model_all, type = "response")
+# Plot predicted counts against year_normalized
+ggplot(df, aes(x = year_normalized)) +
+  geom_point(aes(y = count), color = "blue", shape = 16, size = 1) +  # Set shape and size for points
+  geom_line(aes(y = pred_s, color = factor("Model_time"), linetype = factor("Model_time"), size = factor("Model_time"))) +
+  geom_line(aes(y = pred_t, color = factor("Model_simple"), linetype = factor("Model_simple"), size = factor("Model_simple"))) +
+  geom_line(aes(y = pred_all, color = factor("Model_complex"), linetype = factor("Model_complex"), size = factor("Model_complex"))) +
+  scale_color_manual(values = c("Model_time" = "red", "Model_simple" = "green", "Model_complex" = "purple")) +
+  scale_linetype_manual(values = c("Model_time" = "solid", "Model_simple" = "dashed", "Model_complex" = "dotted")) +
+  scale_size_manual(values = c("Model_time" = 1, "Model_simple" = 1, "Model_complex" = 1)) +
+  labs(title = "Predicted Counts vs. Year", y = "Count/Predicted Count", color = "Model", linetype = "Model", size = "Model") +
+  theme_minimal() +
+  theme(legend.position = "right")
+```
+
+```{r}
+ggplot(df, aes(x = predict(model_all, type = "response"), y = residuals(model_all, type = "response"))) +
+  geom_point() +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(title = "Residual Plot (model_all)", x = "Predicted Count", y = "Residuals") +
+  theme_minimal()
+```
+
+
+
+```{r}
+model_results <- list()
+for (reg in 1:ncol(gdp)){
+  df$gdp = scale(gdp[2:22, reg])
+  df$pop = scale(pop[2:22, reg])
+  region = colnames(gdp)[reg]
+  print(region)
+  model = glm(count ~ year_normalized*gdp*pop, data = df, family = "poisson")
+  model_results[[colnames(gdp)[reg]]] <- summary(model)
+  pic1 = ggplot(df, aes(x=gdp, y=count)) +
+    geom_point() +
+    #geom_line(group=1) +
+    labs(title=paste0("Number of First Record by GDP of ", region), x="GDP", y="Number of Records") +
+    theme_bw()
+  #ggsave(paste0("data_graph/sp_by_gdp/", region, "_sp_by_gdp.png"))
+  print(pic1)
+  pic2 = ggplot(df, aes(x=pop, y=count)) +
+    geom_point() +
+    #geom_line(group=1) +
+    labs(title=paste0("Number of First Record by Population of ", region), x="Pop", y="Number of Records") +
+    theme_bw()
+  #ggsave(paste0("data_graph/sp_by_pop/", region, "_sp_by_pop.png"))
+  print(pic2)
+  print(model_results[[region]])
+}
+```
+GLM is also fitted on a regional scale. Not all regions show significance. In almost all regions, interaction terms are found to be significant, suggesting that the relationship between the count and the predictors (year_normalized, GDP, population) is not straightforward and may depend on the levels of other predictors. GDP is significant in some regions like North America, Southern South America, and Southeast Asia indicating economic factors play a role in the count. Population is significant in some regions like Mediterranean, Western Africa, and Eastern Indo-Pacific indicating demographic factors are relevant.
+
+
+
+
+
+
+
+
+
